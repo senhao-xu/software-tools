@@ -1,10 +1,13 @@
 package cli
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 
 	"xsh/internal/detect"
 	"xsh/internal/log"
+	cruntime "xsh/internal/runtime"
 	"xsh/internal/sysprep"
 )
 
@@ -29,6 +32,10 @@ func NewK8sCmd() *cobra.Command {
 		Use:   "k8s",
 		Short: "Install Kubernetes cluster (master one-shot)",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validateRuntime(&opts.Runtime); err != nil {
+				return err
+			}
+
 			ctx := cmd.Context()
 			state := detect.Detect(ctx)
 			cont, err := detect.Confirm(state, opts.Yes)
@@ -49,7 +56,20 @@ func NewK8sCmd() *cobra.Command {
 				_ = sysprep.Rollback(ctx)
 				return err
 			}
-			log.Info("k8s install: continuing (Step 2-5 placeholder, PR4+ will implement)")
+
+			rtOpts := cruntime.Options{
+				Kind:      cruntime.Kind(opts.Runtime),
+				Mirror:    opts.Mirror,
+				AssetsDir: opts.AssetsDir,
+			}
+			if err := cruntime.Install(ctx, rtOpts); err != nil {
+				log.Error("runtime install failed, rolling back: %v", err)
+				_ = cruntime.Rollback(ctx, rtOpts)
+				_ = sysprep.Rollback(ctx)
+				return err
+			}
+
+			log.Info("k8s install: continuing (Step 3-5 placeholder, PR5+ will implement)")
 			return nil
 		},
 	}
@@ -67,4 +87,18 @@ func NewK8sCmd() *cobra.Command {
 
 	cmd.AddCommand(NewK8sJoinCmd())
 	return cmd
+}
+
+// validateRuntime normalizes empty -> "containerd" and rejects unknown values.
+// Centralised here so `k8s` and `k8s join` share the same accepted set.
+func validateRuntime(rt *string) error {
+	switch *rt {
+	case "containerd", "docker":
+		return nil
+	case "":
+		*rt = "containerd"
+		return nil
+	default:
+		return fmt.Errorf("invalid --runtime=%s (must be containerd or docker)", *rt)
+	}
 }

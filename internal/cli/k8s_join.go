@@ -5,6 +5,7 @@ import (
 
 	"xsh/internal/detect"
 	"xsh/internal/log"
+	cruntime "xsh/internal/runtime"
 	"xsh/internal/sysprep"
 )
 
@@ -27,6 +28,10 @@ func NewK8sJoinCmd() *cobra.Command {
 		Use:   "join",
 		Short: "Join this node to an existing cluster as a worker",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validateRuntime(&opts.Runtime); err != nil {
+				return err
+			}
+
 			ctx := cmd.Context()
 			state := detect.Detect(ctx)
 			cont, err := detect.Confirm(state, opts.Yes)
@@ -47,7 +52,20 @@ func NewK8sJoinCmd() *cobra.Command {
 				_ = sysprep.Rollback(ctx)
 				return err
 			}
-			log.Info("k8s join: continuing (Step 2-4 placeholder, PR4+ will implement)")
+
+			rtOpts := cruntime.Options{
+				Kind:      cruntime.Kind(opts.Runtime),
+				Mirror:    opts.Mirror,
+				AssetsDir: opts.AssetsDir,
+			}
+			if err := cruntime.Install(ctx, rtOpts); err != nil {
+				log.Error("runtime install failed, rolling back: %v", err)
+				_ = cruntime.Rollback(ctx, rtOpts)
+				_ = sysprep.Rollback(ctx)
+				return err
+			}
+
+			log.Info("k8s join: continuing (Step 3-4 placeholder, PR5+ will implement)")
 			return nil
 		},
 	}
