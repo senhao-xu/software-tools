@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Go 项目目录布局规范（cmd/ + internal/ 模块拆分依据）"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Step 执行 / Rollback / exec.Run 的错误处理与回滚约定"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "彩色 log 风格、INFO/WARN/ERROR 级别、[CMD] 前缀约定"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "代码质量基线（命名、可测性、禁止模式）"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "双 runtime × 双模式共 4 套分支，避免重复代码的关键参考"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "cmd → internal/cli → internal/{detect,sysprep,runtime,kube,network} 多层数据流"}
