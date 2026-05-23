@@ -206,14 +206,24 @@ func resolveVersion(major int) (string, error) {
 		return "", fmt.Errorf("apt-cache madison docker-ce: %w", err)
 	}
 
+	version := parseMadisonVersion(out, major)
+	if version == "" {
+		return "", fmt.Errorf("no docker-ce version matching major=%d in apt cache", major)
+	}
+	log.Info("dockerinstall: selected docker-ce version %s for major=%d", version, major)
+	return version, nil
+}
+
+// parseMadisonVersion scans the output of `apt-cache madison docker-ce` for
+// the first version whose numeric prefix (after any `<epoch>:` strip) matches
+// the requested major. Each madison row is `docker-ce | <version> | <repo>`.
+// Returns "" when no row matches. Extracted as a pure function so unit tests
+// can exercise the parser without invoking apt-cache.
+func parseMadisonVersion(output string, major int) string {
 	prefix := regexp.MustCompile(fmt.Sprintf(`^%d\.`, major))
 
-	scanner := bufio.NewScanner(strings.NewReader(out))
+	scanner := bufio.NewScanner(strings.NewReader(output))
 	for scanner.Scan() {
-		// Each madison row is `docker-ce | <version> | <repo>`. The middle
-		// column is what apt-get install consumes verbatim — including any
-		// `<epoch>:` prefix. We strip the epoch only when comparing the
-		// major prefix; the returned string keeps the epoch intact.
 		parts := strings.Split(scanner.Text(), "|")
 		if len(parts) < 2 {
 			continue
@@ -227,14 +237,10 @@ func resolveVersion(major int) (string, error) {
 			cmp = cmp[idx+1:]
 		}
 		if prefix.MatchString(cmp) {
-			log.Info("dockerinstall: selected docker-ce version %s for major=%d", full, major)
-			return full, nil
+			return full
 		}
 	}
-	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf("scan madison output: %w", err)
-	}
-	return "", fmt.Errorf("no docker-ce version matching major=%d in apt cache", major)
+	return ""
 }
 
 // --- step 4: daemon.json ---------------------------------------------------

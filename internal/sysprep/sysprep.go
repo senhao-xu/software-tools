@@ -194,9 +194,8 @@ func hasActiveSwap() bool {
 }
 
 // commentFstabSwap idempotently prefixes any uncommented swap entry with '#'.
-// A fstab entry has whitespace-separated fields where field 3 (1-indexed) is
-// the filesystem type. We only touch lines whose 3rd field equals "swap" and
-// that aren't already comments.
+// It is a thin Read-Run-Write wrapper around commentSwapLines so the actual
+// line-rewriting logic stays pure and unit-testable.
 func commentFstabSwap() error {
 	raw, err := os.ReadFile(fstabPath)
 	if err != nil {
@@ -207,9 +206,26 @@ func commentFstabSwap() error {
 		return fmt.Errorf("read %s: %w", fstabPath, err)
 	}
 
-	// Preserve trailing newline state of original file.
-	hadTrailingNL := strings.HasSuffix(string(raw), "\n")
-	lines := strings.Split(strings.TrimRight(string(raw), "\n"), "\n")
+	out, changed := commentSwapLines(string(raw))
+	if !changed {
+		return nil
+	}
+	if err := os.WriteFile(fstabPath, []byte(out), 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", fstabPath, err)
+	}
+	log.Info("sysprep: commented swap entries in %s", fstabPath)
+	return nil
+}
+
+// commentSwapLines prefixes any uncommented swap entry with '#'. A fstab entry
+// has whitespace-separated fields where field 3 (1-indexed) is the filesystem
+// type. Only lines whose 3rd field equals "swap" and that aren't already
+// comments are rewritten. The original trailing-newline behaviour is
+// preserved. Returns (rewritten, true) when at least one line changed,
+// (original, false) otherwise.
+func commentSwapLines(content string) (string, bool) {
+	hadTrailingNL := strings.HasSuffix(content, "\n")
+	lines := strings.Split(strings.TrimRight(content, "\n"), "\n")
 
 	changed := false
 	for i, line := range lines {
@@ -225,18 +241,14 @@ func commentFstabSwap() error {
 	}
 
 	if !changed {
-		return nil
+		return content, false
 	}
 
 	out := strings.Join(lines, "\n")
 	if hadTrailingNL {
 		out += "\n"
 	}
-	if err := os.WriteFile(fstabPath, []byte(out), 0o644); err != nil {
-		return fmt.Errorf("write %s: %w", fstabPath, err)
-	}
-	log.Info("sysprep: commented swap entries in %s", fstabPath)
-	return nil
+	return out, true
 }
 
 // --- substep 4: sysctl -----------------------------------------------------

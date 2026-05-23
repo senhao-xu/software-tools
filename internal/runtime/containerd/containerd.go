@@ -246,6 +246,17 @@ func writeConfig(opts Options) error {
 		return fmt.Errorf("mkdir %s: %w", configDir, err)
 	}
 
+	rendered, err := renderConfigTOML(opts)
+	if err != nil {
+		return err
+	}
+	return writeFileIfChanged(configPath, []byte(rendered), 0o644)
+}
+
+// renderConfigTOML renders configTemplate against opts and returns the result
+// as a string. Extracted as a pure function so unit tests can assert on the
+// generated config without touching the filesystem.
+func renderConfigTOML(opts Options) (string, error) {
 	sandbox := defaultSandbox
 	if opts.Mirror == "cn" {
 		sandbox = mirrorSandbox
@@ -253,7 +264,7 @@ func writeConfig(opts Options) error {
 
 	tpl, err := template.New("containerd-config").Parse(configTemplate)
 	if err != nil {
-		return fmt.Errorf("parse template: %w", err)
+		return "", fmt.Errorf("parse template: %w", err)
 	}
 
 	var buf bytes.Buffer
@@ -267,10 +278,9 @@ func writeConfig(opts Options) error {
 		MirrorEndpoint: mirrorRegistryURL,
 	}
 	if err := tpl.Execute(&buf, data); err != nil {
-		return fmt.Errorf("render template: %w", err)
+		return "", fmt.Errorf("render template: %w", err)
 	}
-
-	return writeFileIfChanged(configPath, buf.Bytes(), 0o644)
+	return buf.String(), nil
 }
 
 // --- helpers ---------------------------------------------------------------

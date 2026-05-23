@@ -18,14 +18,19 @@ type OSInfo struct {
 // Detect reads /etc/os-release and returns the parsed OSInfo.
 func Detect() (*OSInfo, error) {
 	const path = "/etc/os-release"
-	f, err := os.Open(path)
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
-	defer f.Close()
+	return parseOSRelease(string(raw)), nil
+}
 
+// parseOSRelease parses the content of /etc/os-release into an OSInfo. It is
+// extracted as a pure function so unit tests can exercise the parser without
+// touching the filesystem.
+func parseOSRelease(content string) *OSInfo {
 	info := &OSInfo{}
-	scanner := bufio.NewScanner(f)
+	scanner := bufio.NewScanner(strings.NewReader(content))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -45,10 +50,7 @@ func Detect() (*OSInfo, error) {
 			info.Codename = val
 		}
 	}
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("scan %s: %w", path, err)
-	}
-	return info, nil
+	return info
 }
 
 // RequireDebian returns an error unless os is Debian 12 or 13.

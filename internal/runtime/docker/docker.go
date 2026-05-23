@@ -289,6 +289,17 @@ func writeDaemonJSON() error {
 		return fmt.Errorf("mkdir %s: %w", daemonDir, err)
 	}
 
+	body, err := renderDaemonJSON()
+	if err != nil {
+		return fmt.Errorf("marshal daemon.json: %w", err)
+	}
+
+	return writeFileIfChanged(daemonJSONPath, body, 0o644)
+}
+
+// renderDaemonJSON marshals the runtime/docker daemon config. Extracted as a
+// pure function so unit tests can assert on the bytes without touching disk.
+func renderDaemonJSON() ([]byte, error) {
 	cfg := daemonConfig{
 		RegistryMirrors: []string{},
 		LogDriver:       "json-file",
@@ -300,11 +311,9 @@ func writeDaemonJSON() error {
 	}
 	body, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
-		return fmt.Errorf("marshal daemon.json: %w", err)
+		return nil, err
 	}
-	body = append(body, '\n')
-
-	return writeFileIfChanged(daemonJSONPath, body, 0o644)
+	return append(body, '\n'), nil
 }
 
 // --- helpers ---------------------------------------------------------------
