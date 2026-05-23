@@ -5,6 +5,7 @@ import (
 
 	"xsh/internal/detect"
 	"xsh/internal/log"
+	"xsh/internal/sysprep"
 )
 
 // K8sOptions holds flags shared by `xsh k8s` (master install).
@@ -43,7 +44,12 @@ func NewK8sCmd() *cobra.Command {
 					return err
 				}
 			}
-			log.Info("k8s install: continuing (Step 1-5 placeholder, PR3+ will implement)")
+			if err := sysprep.Run(ctx, sysprep.Options{AssetsDir: opts.AssetsDir}); err != nil {
+				log.Error("sysprep failed, rolling back: %v", err)
+				_ = sysprep.Rollback(ctx)
+				return err
+			}
+			log.Info("k8s install: continuing (Step 2-5 placeholder, PR4+ will implement)")
 			return nil
 		},
 	}

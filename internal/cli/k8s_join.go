@@ -5,6 +5,7 @@ import (
 
 	"xsh/internal/detect"
 	"xsh/internal/log"
+	"xsh/internal/sysprep"
 )
 
 // K8sJoinOptions holds flags for `xsh k8s join`.
@@ -41,7 +42,12 @@ func NewK8sJoinCmd() *cobra.Command {
 					return err
 				}
 			}
-			log.Info("k8s join: continuing (Step 1-4 placeholder, PR3+ will implement)")
+			if err := sysprep.Run(ctx, sysprep.Options{AssetsDir: opts.AssetsDir}); err != nil {
+				log.Error("sysprep failed, rolling back: %v", err)
+				_ = sysprep.Rollback(ctx)
+				return err
+			}
+			log.Info("k8s join: continuing (Step 2-4 placeholder, PR4+ will implement)")
 			return nil
 		},
 	}
