@@ -80,7 +80,23 @@ func NewK8sJoinCmd() *cobra.Command {
 				return err
 			}
 
-			log.Info("k8s join: continuing (Step 4 placeholder, PR8 will implement)")
+			joinOpts := kube.JoinOptions{
+				Runtime:                  opts.Runtime,
+				Master:                   opts.Master,
+				Token:                    opts.Token,
+				DiscoveryTokenCACertHash: opts.DiscoveryTokenCACertHash,
+			}
+			if err := kube.Join(ctx, joinOpts); err != nil {
+				log.Error("kubeadm join failed, rolling back: %v", err)
+				_ = kube.ResetJoin(ctx, joinOpts)
+				_ = kube.Rollback(ctx, kubeOpts)
+				_ = cruntime.Rollback(ctx, rtOpts)
+				_ = sysprep.Rollback(ctx)
+				return err
+			}
+
+			log.Info("k8s join: node joined cluster successfully")
+			log.Info("k8s join: verify on master with 'kubectl get nodes'")
 			return nil
 		},
 	}
