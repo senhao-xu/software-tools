@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"xsh/internal/detect"
+	"xsh/internal/kube"
 	"xsh/internal/log"
 	cruntime "xsh/internal/runtime"
 	"xsh/internal/sysprep"
@@ -69,7 +70,20 @@ func NewK8sCmd() *cobra.Command {
 				return err
 			}
 
-			log.Info("k8s install: continuing (Step 3-5 placeholder, PR5+ will implement)")
+			kubeOpts := kube.Options{
+				Version:   opts.Version,
+				Mirror:    opts.Mirror,
+				AssetsDir: opts.AssetsDir,
+			}
+			if err := kube.Install(ctx, kubeOpts); err != nil {
+				log.Error("kube install failed, rolling back: %v", err)
+				_ = kube.Rollback(ctx, kubeOpts)
+				_ = cruntime.Rollback(ctx, rtOpts)
+				_ = sysprep.Rollback(ctx)
+				return err
+			}
+
+			log.Info("k8s install: continuing (Step 4-5 placeholder, PR6+ will implement)")
 			return nil
 		},
 	}

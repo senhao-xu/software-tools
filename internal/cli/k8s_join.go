@@ -4,6 +4,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"xsh/internal/detect"
+	"xsh/internal/kube"
 	"xsh/internal/log"
 	cruntime "xsh/internal/runtime"
 	"xsh/internal/sysprep"
@@ -17,6 +18,7 @@ type K8sJoinOptions struct {
 	Runtime                  string
 	Mirror                   string
 	AssetsDir                string
+	Version                  string
 	Yes                      bool
 }
 
@@ -65,7 +67,20 @@ func NewK8sJoinCmd() *cobra.Command {
 				return err
 			}
 
-			log.Info("k8s join: continuing (Step 3-4 placeholder, PR5+ will implement)")
+			kubeOpts := kube.Options{
+				Version:   opts.Version,
+				Mirror:    opts.Mirror,
+				AssetsDir: opts.AssetsDir,
+			}
+			if err := kube.Install(ctx, kubeOpts); err != nil {
+				log.Error("kube install failed, rolling back: %v", err)
+				_ = kube.Rollback(ctx, kubeOpts)
+				_ = cruntime.Rollback(ctx, rtOpts)
+				_ = sysprep.Rollback(ctx)
+				return err
+			}
+
+			log.Info("k8s join: continuing (Step 4 placeholder, PR8 will implement)")
 			return nil
 		},
 	}
@@ -77,6 +92,7 @@ func NewK8sJoinCmd() *cobra.Command {
 	f.StringVar(&opts.Runtime, "runtime", "containerd", "container runtime: containerd|docker")
 	f.StringVar(&opts.Mirror, "mirror", "", "package/image mirror (empty = official, supported: cn)")
 	f.StringVar(&opts.AssetsDir, "assets-dir", "", "offline assets directory (overrides auto-detect)")
+	f.StringVar(&opts.Version, "version", "v1.35.0", "Kubernetes version")
 	f.BoolVarP(&opts.Yes, "yes", "y", false, "skip overwrite confirmation")
 
 	_ = cmd.MarkFlagRequired("master")
