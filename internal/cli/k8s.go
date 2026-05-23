@@ -83,7 +83,26 @@ func NewK8sCmd() *cobra.Command {
 				return err
 			}
 
-			log.Info("k8s install: continuing (Step 4-5 placeholder, PR6+ will implement)")
+			initOpts := kube.InitOptions{
+				Runtime:     opts.Runtime,
+				Version:     opts.Version,
+				ServiceCIDR: opts.ServiceCIDR,
+				PodCIDR:     opts.PodCIDR,
+				Hostname:    opts.Hostname,
+				Advertise:   opts.Advertise,
+				Mirror:      opts.Mirror,
+				AssetsDir:   opts.AssetsDir,
+			}
+			if err := kube.Init(ctx, initOpts); err != nil {
+				log.Error("kubeadm init failed, rolling back: %v", err)
+				_ = kube.ResetInit(ctx, initOpts)
+				_ = kube.Rollback(ctx, kubeOpts)
+				_ = cruntime.Rollback(ctx, rtOpts)
+				_ = sysprep.Rollback(ctx)
+				return err
+			}
+
+			log.Info("k8s install: continuing (Step 5 placeholder, PR7 will implement)")
 			return nil
 		},
 	}
