@@ -2,7 +2,8 @@
 //
 // Two install paths are supported:
 //   - offline: dpkg -i <AssetsDir>/deb/docker/containerd.io_*.deb
-//   - online:  add download.docker.com apt repo + apt-get install containerd.io
+//   - online:  add download.docker.com apt repo (via internal/aptrepo) +
+//     apt-get install containerd.io
 //
 // Either way the package renders /etc/containerd/config.toml with the
 // kubelet-friendly defaults (sandbox image + systemd cgroups) and (when
@@ -18,12 +19,11 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"text/template"
 
+	"xsh/internal/aptrepo"
 	xexec "xsh/internal/exec"
 	"xsh/internal/log"
-	"xsh/internal/osinfo"
 )
 
 // Options controls install behaviour.
@@ -41,9 +41,6 @@ type Options struct {
 const (
 	configPath        = "/etc/containerd/config.toml"
 	configDir         = "/etc/containerd"
-	aptKeyringDir     = "/etc/apt/keyrings"
-	aptKeyringPath    = "/etc/apt/keyrings/docker.gpg"
-	aptSourcesPath    = "/etc/apt/sources.list.d/docker.list"
 	defaultSandbox    = "registry.k8s.io/pause:3.10"
 	mirrorSandbox     = "registry.aliyuncs.com/google_containers/pause:3.10"
 	mirrorRegistryURL = "https://registry.aliyuncs.com/google_containers"
@@ -71,7 +68,7 @@ const configTemplate = `version = 2
 // Install installs and configures containerd. Offline path is tried first when
 // AssetsDir is given; on missing/empty deb dir we fall back to the online path
 // (no error). On success containerd is enabled and started.
-func Install(_ context.Context, opts Options) error {
+func Install(ctx context.Context, opts Options) error {
 	log.Info("runtime/containerd: install start")
 
 	installed, err := tryOfflineInstall(opts)
@@ -79,7 +76,7 @@ func Install(_ context.Context, opts Options) error {
 		return err
 	}
 	if !installed {
-		if err := onlineInstall(); err != nil {
+		if err := onlineInstall(ctx); err != nil {
 			return err
 		}
 	}
@@ -155,8 +152,8 @@ func tryOfflineInstall(opts Options) (bool, error) {
 
 // --- online ----------------------------------------------------------------
 
-func onlineInstall() error {
-	if err := ensureDockerAptRepo(); err != nil {
+func onlineInstall(ctx context.Context) error {
+	if err := aptrepo.EnsureDockerRepo(ctx); err != nil {
 		return err
 	}
 	if err := xexec.Run("apt-get", "install", "-y", "containerd.io"); err != nil {
@@ -164,79 +161,6 @@ func onlineInstall() error {
 	}
 	log.Info("runtime/containerd: online install done")
 	return nil
-}
-
-// ensureDockerAptRepo sets up download.docker.com as an apt source. Idempotent:
-// the keyring and sources file are only rewritten when content differs.
-//
-// Exposed (lowercase, package-internal) so the docker subpackage can re-use it
-// in a future refactor; for now it stays local because the two runtimes ship
-// independently and the duplication is small.
-func ensureDockerAptRepo() error {
-	log.Info("runtime/containerd: add docker apt repo")
-
-	if err := xexec.Run("apt-get", "update"); err != nil {
-		log.Warn("apt-get update (pre-repo): %v", err)
-	}
-	if err := xexec.Run("apt-get", "install", "-y",
-		"ca-certificates", "curl", "gnupg", "lsb-release"); err != nil {
-		return fmt.Errorf("apt-get install deps: %w", err)
-	}
-
-	if err := os.MkdirAll(aptKeyringDir, 0o755); err != nil {
-		return fmt.Errorf("mkdir %s: %w", aptKeyringDir, err)
-	}
-
-	if _, err := os.Stat(aptKeyringPath); errors.Is(err, fs.ErrNotExist) {
-		// curl | gpg --dearmor — there is no clean way to express the
-		// pipe through xexec.Run, so we shell out via bash -c. The gpg
-		// step is unavoidable because download.docker.com only publishes
-		// ASCII-armored keys.
-		curl := "curl -fsSL https://download.docker.com/linux/debian/gpg | " +
-			"gpg --dearmor -o " + aptKeyringPath
-		if err := xexec.Run("bash", "-c", curl); err != nil {
-			return fmt.Errorf("install docker gpg key: %w", err)
-		}
-		if err := os.Chmod(aptKeyringPath, 0o644); err != nil {
-			return fmt.Errorf("chmod %s: %w", aptKeyringPath, err)
-		}
-	} else if err != nil {
-		return fmt.Errorf("stat %s: %w", aptKeyringPath, err)
-	}
-
-	codename, err := debianCodename()
-	if err != nil {
-		return err
-	}
-	arch, err := xexec.RunOutput("dpkg", "--print-architecture")
-	if err != nil {
-		return fmt.Errorf("dpkg --print-architecture: %w", err)
-	}
-	arch = strings.TrimSpace(arch)
-
-	srcLine := fmt.Sprintf(
-		"deb [arch=%s signed-by=%s] https://download.docker.com/linux/debian %s stable\n",
-		arch, aptKeyringPath, codename,
-	)
-	if err := writeFileIfChanged(aptSourcesPath, []byte(srcLine), 0o644); err != nil {
-		return err
-	}
-
-	if err := xexec.Run("apt-get", "update"); err != nil {
-		return fmt.Errorf("apt-get update (post-repo): %w", err)
-	}
-	return nil
-}
-
-func debianCodename() (string, error) {
-	info, err := osinfo.Detect()
-	if err != nil {
-		return "", fmt.Errorf("detect os: %w", err)
-	}
-	if info.Codename == "" {
-		return "", fmt.Errorf("VERSION_CODENAME missing in /etc/os-release")
-	}
-	return info.Codename, nil
 }
 
 // --- config rendering ------------------------------------------------------

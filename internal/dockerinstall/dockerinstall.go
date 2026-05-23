@@ -1,17 +1,14 @@
 // Package dockerinstall installs Docker CE as a standalone, day-to-day
-// container engine on Debian 12/13 — distinct from internal/runtime/docker,
+// container engine on Debian/Ubuntu — distinct from internal/runtime/docker,
 // which installs docker + cri-dockerd as the k8s runtime.
 //
 // The flow mirrors docker.senhao.eu.cc:
-//   - add the download.docker.com apt repo + gpg keyring (idempotent)
+//   - add the download.docker.com apt repo + gpg keyring (idempotent,
+//     delegated to internal/aptrepo)
 //   - optionally pin the docker-ce major version via apt-cache madison
 //   - render /etc/docker/daemon.json (json-file 100m x 5, systemd cgroup)
 //   - apt-get install docker-ce + plugins
 //   - systemctl enable --now docker
-//
-// A tiny amount of repo-setup code is duplicated from internal/runtime/docker;
-// lifting it into a shared helper is deferred to PR10 once the abstraction is
-// clear from a third caller.
 package dockerinstall
 
 import (
@@ -26,9 +23,9 @@ import (
 	"regexp"
 	"strings"
 
+	"xsh/internal/aptrepo"
 	xexec "xsh/internal/exec"
 	"xsh/internal/log"
-	"xsh/internal/osinfo"
 )
 
 // Options controls install behaviour.
@@ -46,9 +43,6 @@ type Options struct {
 const (
 	daemonJSONPath = "/etc/docker/daemon.json"
 	daemonDir      = "/etc/docker"
-	aptKeyringDir  = "/etc/apt/keyrings"
-	aptKeyringPath = "/etc/apt/keyrings/docker.gpg"
-	aptSourcesPath = "/etc/apt/sources.list.d/docker.list"
 )
 
 // dockerPkgs are the packages installed by `xsh docker`. docker-model-plugin
@@ -66,13 +60,13 @@ var dockerPkgs = []string{
 // Install runs the full standalone docker install. Steps 1-6 must all succeed;
 // step 7 (docker --version) is best-effort because the service is already
 // enabled by the time we get there.
-func Install(_ context.Context, opts Options) error {
+func Install(ctx context.Context, opts Options) error {
 	log.Info("dockerinstall: install start (major=%d)", opts.Major)
 
 	if err := installAptDeps(); err != nil {
 		return err
 	}
-	if err := ensureDockerAptRepo(); err != nil {
+	if err := aptrepo.EnsureDockerRepo(ctx); err != nil {
 		return err
 	}
 
@@ -131,64 +125,10 @@ func installAptDeps() error {
 }
 
 // --- step 2: docker apt repo ----------------------------------------------
-
-// ensureDockerAptRepo is duplicated from internal/runtime/docker. Keeping the
-// copies independent lets the two packages evolve their repo policy without
-// cross-impact; a shared helper can be extracted in PR10.
-func ensureDockerAptRepo() error {
-	log.Info("dockerinstall: add docker apt repo")
-
-	if err := os.MkdirAll(aptKeyringDir, 0o755); err != nil {
-		return fmt.Errorf("mkdir %s: %w", aptKeyringDir, err)
-	}
-
-	if _, err := os.Stat(aptKeyringPath); errors.Is(err, fs.ErrNotExist) {
-		curl := "curl -fsSL https://download.docker.com/linux/debian/gpg | " +
-			"gpg --dearmor -o " + aptKeyringPath
-		if err := xexec.Run("bash", "-c", curl); err != nil {
-			return fmt.Errorf("install docker gpg key: %w", err)
-		}
-		if err := os.Chmod(aptKeyringPath, 0o644); err != nil {
-			return fmt.Errorf("chmod %s: %w", aptKeyringPath, err)
-		}
-	} else if err != nil {
-		return fmt.Errorf("stat %s: %w", aptKeyringPath, err)
-	}
-
-	codename, err := debianCodename()
-	if err != nil {
-		return err
-	}
-	arch, err := xexec.RunOutput("dpkg", "--print-architecture")
-	if err != nil {
-		return fmt.Errorf("dpkg --print-architecture: %w", err)
-	}
-	arch = strings.TrimSpace(arch)
-
-	srcLine := fmt.Sprintf(
-		"deb [arch=%s signed-by=%s] https://download.docker.com/linux/debian %s stable\n",
-		arch, aptKeyringPath, codename,
-	)
-	if err := writeFileIfChanged(aptSourcesPath, []byte(srcLine), 0o644); err != nil {
-		return err
-	}
-
-	if err := xexec.Run("apt-get", "update"); err != nil {
-		return fmt.Errorf("apt-get update (post-repo): %w", err)
-	}
-	return nil
-}
-
-func debianCodename() (string, error) {
-	info, err := osinfo.Detect()
-	if err != nil {
-		return "", fmt.Errorf("detect os: %w", err)
-	}
-	if info.Codename == "" {
-		return "", fmt.Errorf("VERSION_CODENAME missing in /etc/os-release")
-	}
-	return info.Codename, nil
-}
+//
+// The download.docker.com keyring and sources.list.d entry are installed by
+// aptrepo.EnsureDockerRepo (called from Install). This package no longer
+// carries its own copy; aptrepo handles Debian and Ubuntu uniformly.
 
 // --- step 3: version selection --------------------------------------------
 

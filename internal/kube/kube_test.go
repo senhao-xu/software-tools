@@ -25,38 +25,6 @@ func TestMinorVersion(t *testing.T) {
 	}
 }
 
-func TestRepoBaseURL(t *testing.T) {
-	tests := []struct {
-		name   string
-		mirror string
-		minor  string
-		want   string
-	}{
-		{
-			name:   "official",
-			mirror: "",
-			minor:  "v1.35",
-			want:   "https://pkgs.k8s.io/core:/stable:/v1.35/deb/",
-		},
-		{
-			name:   "cn mirror",
-			mirror: "cn",
-			minor:  "v1.35",
-			want:   "https://mirrors.aliyun.com/kubernetes-new/core:/stable:/v1.35/deb/",
-		},
-		{
-			name:   "unknown mirror falls back to official",
-			mirror: "xx",
-			minor:  "v1.35",
-			want:   "https://pkgs.k8s.io/core:/stable:/v1.35/deb/",
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := repoBaseURL(tc.mirror, tc.minor); got != tc.want {
-				t.Errorf("repoBaseURL(%q, %q) = %q, want %q",
-					tc.mirror, tc.minor, got, tc.want)
-			}
-		})
-	}
-}
+// TestRepoBaseURL was removed in PR12: the URL-building logic moved to
+// internal/aptrepo (covered by aptrepo.TestK8sRepoBaseURL with the same
+// official/cn/unknown-mirror cases).

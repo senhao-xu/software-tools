@@ -114,7 +114,7 @@ internal/cridockerd/
 **PR2（迁移）**：~200 lines
 - 4 个 caller（`dockerinstall` / `runtime/docker` / `runtime/containerd` / `kube`）切换到 `aptrepo`，删除各自的 `ensureDockerAptRepo` / `debianCodename`
 - `runtime/docker` 的 `installCRIDockerd` 改调 `cridockerd.Install`，删除硬编码 `criDockerdRelease`
-- `kube` 包内部 `mirror=cn` 路径增加 ubuntu 分支
+- `kube` 包改调 `aptrepo.EnsureK8sRepo`（**PR12 实际发现**：aliyun k8s mirror URL `mirrors.aliyun.com/kubernetes-new/core:/stable:/<minor>/deb/` 是 distro-agnostic，无 distro slot，因此 kube 内部**不需要**ubuntu 分支，aptrepo 一处处理 mirror 即可）
 
 **PR3（收尾）**：~100 lines
 - 更新 README 支持矩阵

@@ -10,8 +10,10 @@
 //   - online:  add download.docker.com apt repo + apt-get install + fetch
 //     cri-dockerd .deb from GitHub releases
 //
-// Either way /etc/docker/daemon.json is rendered (systemd cgroup driver,
-// json-file 100m x 3) and both docker and cri-docker services are enabled.
+// The apt repo setup is delegated to internal/aptrepo; cri-dockerd fetch +
+// install is delegated to internal/cridockerd. Either way
+// /etc/docker/daemon.json is rendered (systemd cgroup driver, json-file
+// 100m x 3) and both docker and cri-docker services are enabled.
 package dockerrt
 
 import (
@@ -26,9 +28,10 @@ import (
 	"sort"
 	"strings"
 
+	"xsh/internal/aptrepo"
+	"xsh/internal/cridockerd"
 	xexec "xsh/internal/exec"
 	"xsh/internal/log"
-	"xsh/internal/osinfo"
 )
 
 // Options controls install behaviour.
@@ -44,19 +47,13 @@ type Options struct {
 }
 
 const (
-	daemonJSONPath    = "/etc/docker/daemon.json"
-	daemonDir         = "/etc/docker"
-	aptKeyringDir     = "/etc/apt/keyrings"
-	aptKeyringPath    = "/etc/apt/keyrings/docker.gpg"
-	aptSourcesPath    = "/etc/apt/sources.list.d/docker.list"
-	criDockerdVersion = "0.3.21"
-	criDockerdRelease = "0.3.21.3-0.debian-bookworm"
-	criDockerdTmpDeb  = "/tmp/cri-dockerd.deb"
+	daemonJSONPath = "/etc/docker/daemon.json"
+	daemonDir      = "/etc/docker"
 )
 
 // Install installs and configures docker + cri-dockerd. Offline path is tried
 // first when AssetsDir is given; on missing/empty deb dir we fall back online.
-func Install(_ context.Context, opts Options) error {
+func Install(ctx context.Context, opts Options) error {
 	log.Info("runtime/docker: install start")
 
 	installed, err := tryOfflineInstall(opts)
@@ -64,7 +61,7 @@ func Install(_ context.Context, opts Options) error {
 		return err
 	}
 	if !installed {
-		if err := onlineInstall(); err != nil {
+		if err := onlineInstall(ctx); err != nil {
 			return err
 		}
 	}
@@ -158,8 +155,8 @@ func tryOfflineInstall(opts Options) (bool, error) {
 
 // --- online ----------------------------------------------------------------
 
-func onlineInstall() error {
-	if err := ensureDockerAptRepo(); err != nil {
+func onlineInstall(ctx context.Context) error {
+	if err := aptrepo.EnsureDockerRepo(ctx); err != nil {
 		return err
 	}
 	pkgs := []string{
@@ -170,107 +167,11 @@ func onlineInstall() error {
 		return fmt.Errorf("apt-get install docker: %w", err)
 	}
 
-	if err := installCRIDockerd(); err != nil {
+	if err := cridockerd.Install(ctx, cridockerd.DefaultVersion); err != nil {
 		return fmt.Errorf("install cri-dockerd: %w", err)
 	}
 	log.Info("runtime/docker: online install done")
 	return nil
-}
-
-// installCRIDockerd fetches the upstream .deb (Debian 13 has no dedicated
-// release; bookworm builds work on trixie too) and dpkg-installs it. We use a
-// pure-Go HTTP client so the only external runtime dependency is dpkg.
-func installCRIDockerd() error {
-	arch, err := xexec.RunOutput("dpkg", "--print-architecture")
-	if err != nil {
-		return fmt.Errorf("dpkg --print-architecture: %w", err)
-	}
-	arch = strings.TrimSpace(arch)
-
-	url := fmt.Sprintf(
-		"https://github.com/Mirantis/cri-dockerd/releases/download/v%s/cri-dockerd_%s_%s.deb",
-		criDockerdVersion, criDockerdRelease, arch,
-	)
-	if err := xexec.Download(url, criDockerdTmpDeb); err != nil {
-		return fmt.Errorf("download cri-dockerd (need offline .deb or network): %w", err)
-	}
-	if err := xexec.Run("dpkg", "-i", criDockerdTmpDeb); err != nil {
-		// Same dep-fixup dance as the offline batch install.
-		if fixErr := xexec.Run("apt-get", "install", "-f", "-y"); fixErr != nil {
-			return fmt.Errorf("apt-get install -f cri-dockerd: %w (after dpkg: %v)", fixErr, err)
-		}
-		if err2 := xexec.Run("dpkg", "-i", criDockerdTmpDeb); err2 != nil {
-			return fmt.Errorf("dpkg -i cri-dockerd (retry): %w", err2)
-		}
-	}
-	return nil
-}
-
-// ensureDockerAptRepo mirrors the helper in the containerd subpackage. It is
-// duplicated rather than imported across runtimes to keep the two install
-// paths independent (a future refactor can lift this into runtime/internal/
-// once a third caller appears).
-func ensureDockerAptRepo() error {
-	log.Info("runtime/docker: add docker apt repo")
-
-	if err := xexec.Run("apt-get", "update"); err != nil {
-		log.Warn("apt-get update (pre-repo): %v", err)
-	}
-	if err := xexec.Run("apt-get", "install", "-y",
-		"ca-certificates", "curl", "gnupg", "lsb-release"); err != nil {
-		return fmt.Errorf("apt-get install deps: %w", err)
-	}
-
-	if err := os.MkdirAll(aptKeyringDir, 0o755); err != nil {
-		return fmt.Errorf("mkdir %s: %w", aptKeyringDir, err)
-	}
-
-	if _, err := os.Stat(aptKeyringPath); errors.Is(err, fs.ErrNotExist) {
-		curl := "curl -fsSL https://download.docker.com/linux/debian/gpg | " +
-			"gpg --dearmor -o " + aptKeyringPath
-		if err := xexec.Run("bash", "-c", curl); err != nil {
-			return fmt.Errorf("install docker gpg key: %w", err)
-		}
-		if err := os.Chmod(aptKeyringPath, 0o644); err != nil {
-			return fmt.Errorf("chmod %s: %w", aptKeyringPath, err)
-		}
-	} else if err != nil {
-		return fmt.Errorf("stat %s: %w", aptKeyringPath, err)
-	}
-
-	codename, err := debianCodename()
-	if err != nil {
-		return err
-	}
-	arch, err := xexec.RunOutput("dpkg", "--print-architecture")
-	if err != nil {
-		return fmt.Errorf("dpkg --print-architecture: %w", err)
-	}
-	arch = strings.TrimSpace(arch)
-
-	srcLine := fmt.Sprintf(
-		"deb [arch=%s signed-by=%s] https://download.docker.com/linux/debian %s stable\n",
-		arch, aptKeyringPath, codename,
-	)
-	if err := writeFileIfChanged(aptSourcesPath, []byte(srcLine), 0o644); err != nil {
-		return err
-	}
-
-	if err := xexec.Run("apt-get", "update"); err != nil {
-		return fmt.Errorf("apt-get update (post-repo): %w", err)
-	}
-	return nil
-}
-
-func debianCodename() (string, error) {
-	info, err := osinfo.Detect()
-	if err != nil {
-		return "", fmt.Errorf("detect os: %w", err)
-	}
-	if info.Codename == "" {
-		return "", fmt.Errorf("VERSION_CODENAME missing in /etc/os-release")
-	}
-	return info.Codename, nil
 }
 
 // --- daemon.json -----------------------------------------------------------

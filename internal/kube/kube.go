@@ -4,7 +4,8 @@
 //   - offline: dpkg -i <AssetsDir>/deb/kubernetes/*.deb (kubeadm/kubelet/
 //     kubectl + cri-tools + kubernetes-cni and supporting libs)
 //   - online:  add the pkgs.k8s.io (or mirrors.aliyun.com for mirror=cn) apt
-//     repo and apt-get install kubeadm kubelet kubectl
+//     repo (delegated to internal/aptrepo) and apt-get install
+//     kubeadm kubelet kubectl
 //
 // Either way kubeadm/kubelet/kubectl are apt-mark hold'd (so unattended
 // upgrades cannot bump them out from under kubeadm) and kubelet is enabled.
@@ -16,7 +17,6 @@
 package kube
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -26,6 +26,7 @@ import (
 	"sort"
 	"strings"
 
+	"xsh/internal/aptrepo"
 	xexec "xsh/internal/exec"
 	"xsh/internal/log"
 )
@@ -47,19 +48,15 @@ type Options struct {
 	AssetsDir string
 }
 
-const (
-	aptKeyringDir   = "/etc/apt/keyrings"
-	aptKeyringPath  = "/etc/apt/keyrings/kubernetes.gpg"
-	aptSourcesPath  = "/etc/apt/sources.list.d/kubernetes.list"
-	officialRepoFmt = "https://pkgs.k8s.io/core:/stable:/%s/deb/"
-	mirrorRepoFmt   = "https://mirrors.aliyun.com/kubernetes-new/core:/stable:/%s/deb/"
-)
+// (Apt keyring and sources paths, plus the official/cn URL templates, now
+// live in internal/aptrepo. kube relies on aptrepo.EnsureK8sRepo for repo
+// setup and only carries Options-related knobs here.)
 
 // Install installs kubeadm/kubelet/kubectl. The offline path is tried first
 // when AssetsDir is provided; on a missing/empty deb dir we fall back to the
 // online path (no error). kubelet is enabled at the end — kubelet failing to
 // start pre-init is expected and downgraded to a warning.
-func Install(_ context.Context, opts Options) error {
+func Install(ctx context.Context, opts Options) error {
 	log.Info("kube: install kubernetes packages ...")
 
 	installed, err := tryOfflineInstall(opts)
@@ -67,7 +64,7 @@ func Install(_ context.Context, opts Options) error {
 		return err
 	}
 	if !installed {
-		if err := onlineInstall(opts); err != nil {
+		if err := onlineInstall(ctx, opts); err != nil {
 			return err
 		}
 	}
@@ -167,8 +164,11 @@ func tryOfflineInstall(opts Options) (bool, error) {
 
 // --- online ----------------------------------------------------------------
 
-func onlineInstall(opts Options) error {
-	if err := ensureKubeAptRepo(opts); err != nil {
+func onlineInstall(ctx context.Context, opts Options) error {
+	// aptrepo handles official vs aliyun-cn URL selection internally; the
+	// Aliyun k8s mirror is distro-agnostic (one URL serves both Debian and
+	// Ubuntu), so kube does not need its own distro branch here.
+	if err := aptrepo.EnsureK8sRepo(ctx, opts.Mirror, minorVersion(opts.Version)); err != nil {
 		return err
 	}
 	// We deliberately don't pin the .deb version: the minor-scoped URL
@@ -180,65 +180,6 @@ func onlineInstall(opts Options) error {
 	}
 	log.Info("kube: online install done")
 	return nil
-}
-
-// ensureKubeAptRepo writes the keyring and sources.list.d entry for the
-// pkgs.k8s.io (or Aliyun mirror) flat repo. Idempotent: existing-and-correct
-// files are not rewritten, and the keyring is only fetched on first run.
-func ensureKubeAptRepo(opts Options) error {
-	log.Info("kube: add kubernetes apt repo")
-
-	if err := xexec.Run("apt-get", "update"); err != nil {
-		log.Warn("apt-get update (pre-repo): %v", err)
-	}
-	if err := xexec.Run("apt-get", "install", "-y",
-		"ca-certificates", "curl", "gnupg"); err != nil {
-		return fmt.Errorf("apt-get install deps: %w", err)
-	}
-
-	if err := os.MkdirAll(aptKeyringDir, 0o755); err != nil {
-		return fmt.Errorf("mkdir %s: %w", aptKeyringDir, err)
-	}
-
-	minor := minorVersion(opts.Version)
-	baseURL := repoBaseURL(opts.Mirror, minor)
-
-	if _, err := os.Stat(aptKeyringPath); errors.Is(err, fs.ErrNotExist) {
-		// curl | gpg --dearmor — no clean way to express the pipe through
-		// xexec.Run, so we shell out via bash -c (same approach as the
-		// PR4 docker.gpg flow).
-		curl := "curl -fsSL " + baseURL + "Release.key | " +
-			"gpg --dearmor -o " + aptKeyringPath
-		if err := xexec.Run("bash", "-c", curl); err != nil {
-			return fmt.Errorf("install kubernetes gpg key: %w", err)
-		}
-		if err := os.Chmod(aptKeyringPath, 0o644); err != nil {
-			return fmt.Errorf("chmod %s: %w", aptKeyringPath, err)
-		}
-	} else if err != nil {
-		return fmt.Errorf("stat %s: %w", aptKeyringPath, err)
-	}
-
-	// pkgs.k8s.io is a flat repo — the trailing " /" after the base URL is
-	// required syntax for apt to treat it as such.
-	srcLine := fmt.Sprintf("deb [signed-by=%s] %s /\n", aptKeyringPath, baseURL)
-	if err := writeFileIfChanged(aptSourcesPath, []byte(srcLine), 0o644); err != nil {
-		return err
-	}
-
-	if err := xexec.Run("apt-get", "update"); err != nil {
-		log.Warn("apt-get update (post-repo): %v", err)
-	}
-	return nil
-}
-
-// repoBaseURL returns the apt repo base URL (with trailing slash) for the
-// given mirror selection and minor version (e.g. "v1.35").
-func repoBaseURL(mirror, minor string) string {
-	if mirror == "cn" {
-		return fmt.Sprintf(mirrorRepoFmt, minor)
-	}
-	return fmt.Sprintf(officialRepoFmt, minor)
 }
 
 // minorVersion extracts the "v<major>.<minor>" portion of a kubeadm version
@@ -278,19 +219,6 @@ func verifyInstalledVersion(want string) {
 }
 
 // --- helpers ---------------------------------------------------------------
-
-func writeFileIfChanged(path string, content []byte, perm os.FileMode) error {
-	existing, err := os.ReadFile(path)
-	if err == nil && bytes.Equal(existing, content) {
-		log.Info("kube: %s already up to date", path)
-		return nil
-	}
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("read %s: %w", path, err)
-	}
-	if err := os.WriteFile(path, content, perm); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-	log.Info("kube: wrote %s", path)
-	return nil
-}
+//
+// writeFileIfChanged moved to internal/aptrepo along with the apt keyring +
+// sources rendering. kube has no other file-write callers left.
