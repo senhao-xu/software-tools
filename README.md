@@ -1,7 +1,8 @@
-# xsh — Debian 12/13 Kubernetes & Docker Installer
+# xsh — Debian / Ubuntu Kubernetes & Docker Installer
 
-A single Go binary that turns a clean Debian 12/13 host into either a working
-Kubernetes node (master one-shot, or worker join) or a standalone Docker host.
+A single Go binary that turns a clean Debian 12/13 or Ubuntu 22.04/24.04 host
+into either a working Kubernetes node (master one-shot, or worker join) or a
+standalone Docker host.
 
 The two install paths consolidate two pre-existing shell scripts (an offline
 Kubernetes installer and the online Docker recipe at `docker.senhao.eu.cc`)
@@ -23,7 +24,11 @@ the standard distribution tools (`apt-get`, `dpkg`, `systemctl`, ...).
 
 ## System Requirements
 
-- Debian 12 (bookworm) or Debian 13 (trixie)
+- One of the following Debian-family hosts:
+  - Debian 12 (bookworm)
+  - Debian 13 (trixie)
+  - Ubuntu 22.04 LTS (jammy)
+  - Ubuntu 24.04 LTS (noble)
 - root privilege (the binary checks `euid` at startup)
 - At least 2 GB RAM / 2 CPU / 20 GB disk (the kubeadm baseline)
 
@@ -178,14 +183,19 @@ go test ./...   # unit tests (pure functions only — no Linux/root needed)
 
 ## Project Status
 
-- PR1–PR10 complete: CLI skeleton, detect/cleanup, sysprep, runtime
+- PR1–PR13 complete: CLI skeleton, detect/cleanup, sysprep, runtime
   (containerd + docker), kube install, kubeadm init, network, worker
-  join, standalone docker, rollback hardening + unit tests + this README.
-- Integration tests run manually on a clean Debian 12 VM across four
-  paths: offline/containerd, offline/docker, online/containerd,
-  online/docker with `--mirror=cn`.
+  join, standalone docker, rollback hardening + unit tests + this README,
+  plus multi-OS support (Debian 12/13, Ubuntu 22.04/24.04).
+- Integration tests run manually on clean Debian 12 and Debian 13 VMs
+  across four paths: offline/containerd, offline/docker, online/containerd,
+  online/docker with `--mirror=cn`. Ubuntu 22.04 / 24.04 are code-level
+  supported (shared apt-repo + cri-dockerd artifact mapping, unit-tested)
+  but the end-to-end install matrix has not yet been run on Ubuntu in CI
+  or by hand — treat Ubuntu support as beta until that pass lands.
 - Not supported (intentionally out of scope): multi-master HA control plane,
-  Kubernetes version upgrade, uninstall subcommand, Ubuntu / CentOS / RHEL
+  Kubernetes version upgrade, uninstall subcommand,
+  CentOS / Rocky / AlmaLinux / RHEL / SUSE / Arch / other non-Debian-family
   hosts, CNIs other than flannel.
 
 ## License
