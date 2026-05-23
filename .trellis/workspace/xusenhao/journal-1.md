@@ -49,3 +49,38 @@ Brainstormed 13 design decisions and implemented xsh CLI end-to-end across PR1-P
 ### Next Steps
 
 - None - task complete
+
+
+## Session 2: xsh multi-OS support (Debian + Ubuntu)
+
+**Date**: 2026-05-23
+**Task**: xsh multi-OS support (Debian + Ubuntu)
+**Branch**: `master`
+
+### Summary
+
+Extended xsh from Debian-only to Debian 12/13 + Ubuntu 22.04/24.04 across all 3 install commands (xsh docker, xsh k8s, xsh k8s join). PR11 extracted internal/aptrepo (apt repo + codename + URL prefix map) and internal/cridockerd (release artifact URL builder with debian-trixie -> debian-bookworm and ubuntu-noble -> ubuntu-jammy fallback), renamed osinfo.RequireDebian to RequireSupported, added detected-OS log at each CLI RunE. PR12 migrated 4 legacy installers (dockerinstall, runtime/docker, runtime/containerd, kube) to the new shared packages, net -339 lines of duplication removed; PRD assumption that kube needed a ubuntu mirror branch was disproven (aliyun k8s URL is distro-agnostic). PR13 updated README support matrix and marked Ubuntu as beta -- code-level supported via unit-tested mappings but end-to-end install matrix not yet run on a Ubuntu VM.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b8bd432` | (see git log) |
+| `1d917db` | (see git log) |
+| `7c10fa4` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
