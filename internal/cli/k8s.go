@@ -8,6 +8,7 @@ import (
 	"xsh/internal/detect"
 	"xsh/internal/kube"
 	"xsh/internal/log"
+	"xsh/internal/network"
 	cruntime "xsh/internal/runtime"
 	"xsh/internal/sysprep"
 )
@@ -102,7 +103,22 @@ func NewK8sCmd() *cobra.Command {
 				return err
 			}
 
-			log.Info("k8s install: continuing (Step 5 placeholder, PR7 will implement)")
+			netOpts := network.Options{
+				AssetsDir: opts.AssetsDir,
+				Mirror:    opts.Mirror,
+			}
+			if err := network.Install(ctx, netOpts); err != nil {
+				log.Error("network install failed, rolling back: %v", err)
+				_ = network.Rollback(ctx, netOpts)
+				_ = kube.ResetInit(ctx, initOpts)
+				_ = kube.Rollback(ctx, kubeOpts)
+				_ = cruntime.Rollback(ctx, rtOpts)
+				_ = sysprep.Rollback(ctx)
+				return err
+			}
+
+			log.Info("k8s install: cluster ready -- run 'kubectl get nodes' to verify")
+			log.Info("k8s install: worker join command in /var/cache/xsh/join-command.sh")
 			return nil
 		},
 	}
