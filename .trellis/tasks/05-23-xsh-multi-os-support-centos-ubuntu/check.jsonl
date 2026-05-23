@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "check 阶段要验证 aptrepo / cridockerd 抽出后是否真的被 4 个 caller 复用，而不是某个 caller 偷偷保留了自己的旧实现造成残留复制粘贴。"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "check 阶段要验证 distro 知识（codename 映射、docker.com URL 前缀、cri-dockerd artifact 名）是否只在 aptrepo/cridockerd 的映射表里出现一次；4 个 caller 包里、cli 入口、osinfo 都不应再出现 'debian' / 'ubuntu' / 'bookworm' / 'jammy' 之类的硬编码字符串。"}

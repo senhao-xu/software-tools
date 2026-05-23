@@ -9,6 +9,7 @@ import (
 	"xsh/internal/kube"
 	"xsh/internal/log"
 	"xsh/internal/network"
+	"xsh/internal/osinfo"
 	cruntime "xsh/internal/runtime"
 	"xsh/internal/sysprep"
 )
@@ -34,6 +35,15 @@ func NewK8sCmd() *cobra.Command {
 		Use:   "k8s",
 		Short: "Install Kubernetes cluster (master one-shot)",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			info, err := osinfo.Detect()
+			if err != nil {
+				return fmt.Errorf("detect os: %w", err)
+			}
+			log.Info("k8s: detected OS: %s %s (%s)", info.ID, info.VersionID, info.Codename)
+			if err := osinfo.RequireSupported(info); err != nil {
+				return err
+			}
+
 			if err := validateRuntime(&opts.Runtime); err != nil {
 				return err
 			}

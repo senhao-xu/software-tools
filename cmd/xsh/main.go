@@ -1,4 +1,5 @@
-// Command xsh is a single-binary deployer for Kubernetes and Docker on Debian 12/13.
+// Command xsh is a single-binary deployer for Kubernetes and Docker on
+// Debian 12/13 or Ubuntu 22.04/24.04.
 package main
 
 import (
@@ -18,7 +19,7 @@ var verbose bool
 func main() {
 	root := &cobra.Command{
 		Use:          "xsh",
-		Short:        "Software tools for k8s & docker on Debian 12/13",
+		Short:        "Software tools for k8s & docker on Debian 12/13 or Ubuntu 22.04/24.04",
 		SilenceUsage: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			log.SetVerbose(verbose)
@@ -29,7 +30,7 @@ func main() {
 			}
 
 			checkRoot()
-			return checkDebian()
+			return checkSupportedOS()
 		},
 	}
 
@@ -67,16 +68,16 @@ func checkRoot() {
 	}
 }
 
-// checkDebian validates the host is Debian 12 or 13. On non-Linux systems the
-// /etc/os-release file is absent and we downgrade to a warning so developers
-// can exercise --help on Windows.
-func checkDebian() error {
+// checkSupportedOS validates the host is one of the supported (distro,
+// version) combos. On non-Linux systems /etc/os-release is absent and we
+// downgrade to a warning so developers can exercise --help on Windows.
+func checkSupportedOS() error {
 	info, err := osinfo.Detect()
 	if err != nil {
 		log.Warn("os detection skipped: %v", err)
 		return nil
 	}
-	if err := osinfo.RequireDebian(info); err != nil {
+	if err := osinfo.RequireSupported(info); err != nil {
 		return fmt.Errorf("os check: %w", err)
 	}
 	return nil

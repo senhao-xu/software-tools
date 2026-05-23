@@ -95,7 +95,7 @@ VERSION_ID=12
 	}
 }
 
-func TestRequireDebian(t *testing.T) {
+func TestRequireSupported(t *testing.T) {
 	tests := []struct {
 		name      string
 		info      *OSInfo
@@ -111,14 +111,40 @@ func TestRequireDebian(t *testing.T) {
 			info: &OSInfo{ID: "debian", VersionID: "13"},
 		},
 		{
+			name: "ubuntu 22.04 ok",
+			info: &OSInfo{ID: "ubuntu", VersionID: "22.04"},
+		},
+		{
+			name: "ubuntu 24.04 ok",
+			info: &OSInfo{ID: "ubuntu", VersionID: "24.04"},
+		},
+		{
 			name:      "nil info",
 			info:      nil,
 			wantErr:   true,
 			errSubstr: "nil",
 		},
 		{
-			name:      "ubuntu rejected",
-			info:      &OSInfo{ID: "ubuntu", VersionID: "22.04"},
+			name:      "centos rejected",
+			info:      &OSInfo{ID: "centos", VersionID: "8"},
+			wantErr:   true,
+			errSubstr: "unsupported distro",
+		},
+		{
+			name:      "rhel rejected",
+			info:      &OSInfo{ID: "rhel", VersionID: "9"},
+			wantErr:   true,
+			errSubstr: "unsupported distro",
+		},
+		{
+			name:      "linuxmint rejected (no ID_LIKE fallback per PRD)",
+			info:      &OSInfo{ID: "linuxmint", VersionID: "21"},
+			wantErr:   true,
+			errSubstr: "unsupported distro",
+		},
+		{
+			name:      "raspbian rejected (no ID_LIKE fallback per PRD)",
+			info:      &OSInfo{ID: "raspbian", VersionID: "12"},
 			wantErr:   true,
 			errSubstr: "unsupported distro",
 		},
@@ -126,30 +152,42 @@ func TestRequireDebian(t *testing.T) {
 			name:      "debian 11 rejected",
 			info:      &OSInfo{ID: "debian", VersionID: "11"},
 			wantErr:   true,
-			errSubstr: "unsupported Debian version",
+			errSubstr: "unsupported debian VERSION_ID",
 		},
 		{
 			name:      "debian empty version rejected",
 			info:      &OSInfo{ID: "debian", VersionID: ""},
 			wantErr:   true,
-			errSubstr: "unsupported Debian version",
+			errSubstr: "unsupported debian VERSION_ID",
+		},
+		{
+			name:      "ubuntu 20.04 rejected (EOL per PRD)",
+			info:      &OSInfo{ID: "ubuntu", VersionID: "20.04"},
+			wantErr:   true,
+			errSubstr: "unsupported ubuntu VERSION_ID",
+		},
+		{
+			name:      "ubuntu 25.04 rejected (non-LTS, out of matrix)",
+			info:      &OSInfo{ID: "ubuntu", VersionID: "25.04"},
+			wantErr:   true,
+			errSubstr: "unsupported ubuntu VERSION_ID",
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			err := RequireDebian(tc.info)
+			err := RequireSupported(tc.info)
 			if tc.wantErr {
 				if err == nil {
-					t.Fatalf("RequireDebian() = nil, want error containing %q", tc.errSubstr)
+					t.Fatalf("RequireSupported() = nil, want error containing %q", tc.errSubstr)
 				}
 				if tc.errSubstr != "" && !strings.Contains(err.Error(), tc.errSubstr) {
-					t.Errorf("RequireDebian() error = %q, want substring %q", err.Error(), tc.errSubstr)
+					t.Errorf("RequireSupported() error = %q, want substring %q", err.Error(), tc.errSubstr)
 				}
 				return
 			}
 			if err != nil {
-				t.Errorf("RequireDebian() = %v, want nil", err)
+				t.Errorf("RequireSupported() = %v, want nil", err)
 			}
 		})
 	}

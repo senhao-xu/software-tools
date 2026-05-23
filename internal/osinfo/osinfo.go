@@ -53,18 +53,44 @@ func parseOSRelease(content string) *OSInfo {
 	return info
 }
 
-// RequireDebian returns an error unless os is Debian 12 or 13.
-func RequireDebian(os *OSInfo) error {
-	if os == nil {
+// supportedVersions enumerates the (ID, VERSION_ID) pairs xsh supports. The
+// shape mirrors internal/aptrepo's distro map; the two MUST stay in sync —
+// every entry here needs a codename + docker.com slug there. ID matching is
+// exact: derived distros (linuxmint, raspbian, ...) are rejected even when
+// their /etc/os-release sets ID_LIKE=debian|ubuntu (deliberate per PRD).
+var supportedVersions = map[string][]string{
+	"debian": {"12", "13"},
+	"ubuntu": {"22.04", "24.04"},
+}
+
+// RequireSupported returns nil iff os is one of the supported (distro,
+// version) pairs: Debian 12/13 or Ubuntu 22.04/24.04. Errors describe which
+// field is wrong, what the current value is, and the supported set.
+func RequireSupported(info *OSInfo) error {
+	if info == nil {
 		return fmt.Errorf("os info is nil")
 	}
-	if os.ID != "debian" {
-		return fmt.Errorf("unsupported distro %q: only Debian 12/13 is supported", os.ID)
+	versions, ok := supportedVersions[info.ID]
+	if !ok {
+		return fmt.Errorf("unsupported distro ID=%q: only %s are supported",
+			info.ID, supportedList())
 	}
-	switch os.VersionID {
-	case "12", "13":
-		return nil
-	default:
-		return fmt.Errorf("unsupported Debian version %q: only 12 and 13 are supported", os.VersionID)
+	for _, v := range versions {
+		if info.VersionID == v {
+			return nil
+		}
 	}
+	return fmt.Errorf("unsupported %s VERSION_ID=%q: supported %s versions are %s",
+		info.ID, info.VersionID, info.ID, strings.Join(versions, ", "))
+}
+
+// supportedList renders the supported (distro, versions) set for error
+// messages, e.g. "debian 12/13, ubuntu 22.04/24.04".
+func supportedList() string {
+	// Stable order so test assertions on the error substring don't flake.
+	parts := []string{
+		"debian " + strings.Join(supportedVersions["debian"], "/"),
+		"ubuntu " + strings.Join(supportedVersions["ubuntu"], "/"),
+	}
+	return strings.Join(parts, ", ")
 }

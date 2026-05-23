@@ -1,11 +1,14 @@
 package cli
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 
 	"xsh/internal/detect"
 	"xsh/internal/dockerinstall"
 	"xsh/internal/log"
+	"xsh/internal/osinfo"
 )
 
 // DockerOptions holds flags for `xsh docker`.
@@ -20,8 +23,17 @@ func NewDockerCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "docker",
-		Short: "Install Docker on Debian 12/13",
+		Short: "Install Docker on Debian 12/13 or Ubuntu 22.04/24.04",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			info, err := osinfo.Detect()
+			if err != nil {
+				return fmt.Errorf("detect os: %w", err)
+			}
+			log.Info("docker: detected OS: %s %s (%s)", info.ID, info.VersionID, info.Codename)
+			if err := osinfo.RequireSupported(info); err != nil {
+				return err
+			}
+
 			ctx := cmd.Context()
 			state := detect.Detect(ctx)
 			cont, err := detect.Confirm(state, opts.Yes)
