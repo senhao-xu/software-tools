@@ -3,6 +3,7 @@ package cli
 import (
 	"github.com/spf13/cobra"
 
+	"xsh/internal/detect"
 	"xsh/internal/log"
 )
 
@@ -25,7 +26,22 @@ func NewK8sJoinCmd() *cobra.Command {
 		Use:   "join",
 		Short: "Join this node to an existing cluster as a worker",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			log.Info("k8s join: not yet implemented (PR1 skeleton)")
+			ctx := cmd.Context()
+			state := detect.Detect(ctx)
+			cont, err := detect.Confirm(state, opts.Yes)
+			if err != nil {
+				return err
+			}
+			if !cont {
+				log.Info("cancelled by user")
+				return nil
+			}
+			if state.HasAny() {
+				if err := detect.Cleanup(ctx); err != nil {
+					return err
+				}
+			}
+			log.Info("k8s join: continuing (Step 1-4 placeholder, PR3+ will implement)")
 			return nil
 		},
 	}

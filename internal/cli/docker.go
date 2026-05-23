@@ -3,6 +3,7 @@ package cli
 import (
 	"github.com/spf13/cobra"
 
+	"xsh/internal/detect"
 	"xsh/internal/log"
 )
 
@@ -20,7 +21,22 @@ func NewDockerCmd() *cobra.Command {
 		Use:   "docker",
 		Short: "Install Docker on Debian 12/13",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			log.Info("docker install: not yet implemented (PR1 skeleton)")
+			ctx := cmd.Context()
+			state := detect.Detect(ctx)
+			cont, err := detect.Confirm(state, opts.Yes)
+			if err != nil {
+				return err
+			}
+			if !cont {
+				log.Info("cancelled by user")
+				return nil
+			}
+			if state.HasAny() {
+				if err := detect.Cleanup(ctx); err != nil {
+					return err
+				}
+			}
+			log.Info("docker install: continuing (install steps placeholder, PR9 will implement)")
 			return nil
 		},
 	}

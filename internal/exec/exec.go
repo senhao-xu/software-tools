@@ -38,6 +38,16 @@ func Run(name string, args ...string) error {
 	return nil
 }
 
+// Probe runs name with args silently and reports whether the command exited
+// with status 0. Used for cheap host-state checks (e.g. systemctl is-active);
+// it suppresses the [CMD] log to avoid flooding the terminal during detection.
+func Probe(name string, args ...string) bool {
+	cmd := exec.Command(name, args...)
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	return cmd.Run() == nil
+}
+
 // RunOutput executes name with args and returns trimmed stdout. On failure it
 // returns an error that includes captured stderr.
 func RunOutput(name string, args ...string) (string, error) {

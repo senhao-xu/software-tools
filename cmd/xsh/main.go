@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -36,6 +37,8 @@ func main() {
 
 	root.AddCommand(cli.NewK8sCmd())
 	root.AddCommand(cli.NewDockerCmd())
+
+	root.SetContext(context.Background())
 
 	if err := root.Execute(); err != nil {
 		os.Exit(1)

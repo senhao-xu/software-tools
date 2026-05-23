@@ -3,6 +3,7 @@ package cli
 import (
 	"github.com/spf13/cobra"
 
+	"xsh/internal/detect"
 	"xsh/internal/log"
 )
 
@@ -27,7 +28,22 @@ func NewK8sCmd() *cobra.Command {
 		Use:   "k8s",
 		Short: "Install Kubernetes cluster (master one-shot)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			log.Info("k8s install: not yet implemented (PR1 skeleton)")
+			ctx := cmd.Context()
+			state := detect.Detect(ctx)
+			cont, err := detect.Confirm(state, opts.Yes)
+			if err != nil {
+				return err
+			}
+			if !cont {
+				log.Info("cancelled by user")
+				return nil
+			}
+			if state.HasAny() {
+				if err := detect.Cleanup(ctx); err != nil {
+					return err
+				}
+			}
+			log.Info("k8s install: continuing (Step 1-5 placeholder, PR3+ will implement)")
 			return nil
 		},
 	}
