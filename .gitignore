@@ -8,6 +8,12 @@
 *.so
 *.dylib
 
+# Build output
+bin/
+
+# Windows bash crash artifacts
+*.stackdump
+
 # Test binary, built with `go test -c`
 *.test
 
