@@ -4,6 +4,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"xsh/internal/detect"
+	"xsh/internal/dockerinstall"
 	"xsh/internal/log"
 )
 
@@ -36,7 +37,16 @@ func NewDockerCmd() *cobra.Command {
 					return err
 				}
 			}
-			log.Info("docker install: continuing (install steps placeholder, PR9 will implement)")
+			installOpts := dockerinstall.Options{
+				Major:  opts.Major,
+				Mirror: "",
+			}
+			if err := dockerinstall.Install(ctx, installOpts); err != nil {
+				log.Error("docker install failed, rolling back: %v", err)
+				_ = dockerinstall.Rollback(ctx, installOpts)
+				return err
+			}
+			log.Info("docker install: done -- run 'docker run hello-world' to verify")
 			return nil
 		},
 	}
