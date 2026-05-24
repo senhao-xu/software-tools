@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend guidelines TOC — quick scan of available conventions when adding the version subcommand."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Code style / forbidden patterns for new Go code (version subcommand)."}

@@ -1,0 +1,1 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Verify new Go code (main.go version vars + version subcommand) follows project quality bar."}
