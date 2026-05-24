@@ -16,6 +16,15 @@ import (
 
 var verbose bool
 
+// Build-time version metadata. GoReleaser overrides these via -ldflags
+// (`-X main.version=... -X main.commit=... -X main.date=...`); local builds
+// keep the placeholder values below.
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 func main() {
 	root := &cobra.Command{
 		Use:          "xsh",
@@ -38,11 +47,23 @@ func main() {
 
 	root.AddCommand(cli.NewK8sCmd())
 	root.AddCommand(cli.NewDockerCmd())
+	root.AddCommand(newVersionCmd())
 
 	root.SetContext(context.Background())
 
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
+	}
+}
+
+// newVersionCmd prints the build-time version metadata injected by GoReleaser.
+func newVersionCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "version",
+		Short: "Print version, commit and build date",
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Printf("xsh version %s commit=%s built=%s\n", version, commit, date)
+		},
 	}
 }
 
@@ -52,7 +73,7 @@ func main() {
 func isExempt(cmd *cobra.Command) bool {
 	for c := cmd; c != nil; c = c.Parent() {
 		name := c.Name()
-		if name == "help" || name == "completion" {
+		if name == "help" || name == "completion" || name == "version" {
 			return true
 		}
 	}

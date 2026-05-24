@@ -32,6 +32,28 @@ the standard distribution tools (`apt-get`, `dpkg`, `systemctl`, ...).
 - root privilege (the binary checks `euid` at startup)
 - At least 2 GB RAM / 2 CPU / 20 GB disk (the kubeadm baseline)
 
+## Install
+
+Pre-built Linux binaries (`amd64` + `arm64`) are published on the
+[Releases page](https://github.com/senhao-xu/software-tools/releases). Pick
+the archive matching your host architecture:
+
+```bash
+# Replace <VERSION> with the tag you want (e.g. 0.1.0) and <ARCH> with
+# amd64 (x86_64) or arm64 (aarch64).
+VERSION=0.0.1
+ARCH=amd64
+
+curl -L -o xsh.tar.gz \
+  "https://github.com/senhao-xu/software-tools/releases/download/v${VERSION}/xsh_${VERSION}_linux_${ARCH}.tar.gz"
+tar -xzf xsh.tar.gz
+sudo install -m 0755 xsh /usr/local/bin/xsh
+xsh version
+```
+
+Each release also publishes `checksums.txt` (sha256) alongside the archives;
+verify it before installing on production hosts.
+
 ## Quick Start
 
 ### Master one-shot
@@ -180,6 +202,12 @@ make build      # produces bin/xsh
 make fmt vet    # gofmt + go vet
 go test ./...   # unit tests (pure functions only — no Linux/root needed)
 ```
+
+Tagged releases (`vX.Y.Z`) trigger `.github/workflows/release.yml`, which
+runs [GoReleaser](https://goreleaser.com/) to cross-compile `linux/amd64` +
+`linux/arm64`, attach `checksums.txt`, and publish to GitHub Releases. The
+binary stamps `main.version` / `main.commit` / `main.date` via `-ldflags`
+so `xsh version` reports the exact build.
 
 ## Project Status
 

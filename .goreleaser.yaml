@@ -1,0 +1,57 @@
+# GoReleaser config for xsh — single-binary Debian/Ubuntu installer.
+# Docs: https://goreleaser.com/customization/
+version: 2
+
+project_name: xsh
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: xsh
+    main: ./cmd/xsh
+    binary: xsh
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .Commit }}
+      - -X main.date={{ .Date }}
+
+archives:
+  - id: xsh
+    name_template: "xsh_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats:
+      - tar.gz
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^chore:"
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "Merge pull request"
+
+release:
+  draft: false
+  prerelease: auto
+  name_template: "xsh {{ .Tag }}"
