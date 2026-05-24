@@ -84,3 +84,36 @@ Extended xsh from Debian-only to Debian 12/13 + Ubuntu 22.04/24.04 across all 3 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: PR14: GitHub Actions release pipeline (linux amd64+arm64 via GoReleaser)
+
+**Date**: 2026-05-24
+**Task**: PR14: GitHub Actions release pipeline (linux amd64+arm64 via GoReleaser)
+**Branch**: `master`
+
+### Summary
+
+Added GoReleaser-driven release workflow. cmd/xsh/main.go gets version/commit/date package vars + xsh version subcommand (exempt from root/OS checks); .goreleaser.yaml cross-compiles linux/amd64+arm64 with ldflags injection, tar.gz archives, sha256 checksums, commit-based changelog; .github/workflows/release.yml triggers on tag v* push + workflow_dispatch (contents:write, goreleaser-action@v6 ~> v2 release --clean). README gains an Install section (version-agnostic curl pattern) and a release-pipeline note in Build. Verified: go fmt / go vet / cross-compile (amd64+arm64) / go test all pass. Pushed v0.0.1 tag for first-release dry-run.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a74194e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
