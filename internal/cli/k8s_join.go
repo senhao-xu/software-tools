@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"xsh/internal/assets"
 	"xsh/internal/detect"
 	"xsh/internal/kube"
 	"xsh/internal/log"
@@ -44,6 +45,14 @@ func NewK8sJoinCmd() *cobra.Command {
 
 			if err := validateRuntime(&opts.Runtime); err != nil {
 				return err
+			}
+			if opts.AssetsDir != "" {
+				if err := assets.ValidateK8sBundle(opts.AssetsDir, assets.K8sBundleOptions{
+					Runtime:             opts.Runtime,
+					IncludeControlPlane: false,
+				}); err != nil {
+					return fmt.Errorf("validate offline assets: %w", err)
+				}
 			}
 
 			ctx := cmd.Context()

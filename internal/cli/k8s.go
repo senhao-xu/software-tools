@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"xsh/internal/assets"
 	"xsh/internal/detect"
 	"xsh/internal/kube"
 	"xsh/internal/log"
@@ -46,6 +47,14 @@ func NewK8sCmd() *cobra.Command {
 
 			if err := validateRuntime(&opts.Runtime); err != nil {
 				return err
+			}
+			if opts.AssetsDir != "" {
+				if err := assets.ValidateK8sBundle(opts.AssetsDir, assets.K8sBundleOptions{
+					Runtime:             opts.Runtime,
+					IncludeControlPlane: true,
+				}); err != nil {
+					return fmt.Errorf("validate offline assets: %w", err)
+				}
 			}
 
 			ctx := cmd.Context()
@@ -144,6 +153,7 @@ func NewK8sCmd() *cobra.Command {
 	f.StringVar(&opts.Advertise, "advertise", "", "advertise address (default: auto-detect outbound IP)")
 	f.BoolVarP(&opts.Yes, "yes", "y", false, "skip overwrite confirmation")
 
+	cmd.AddCommand(NewK8sBundleCmd())
 	cmd.AddCommand(NewK8sJoinCmd())
 	return cmd
 }

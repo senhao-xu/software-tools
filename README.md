@@ -130,10 +130,30 @@ inputs:
 
 ## Offline Mode
 
-When `--assets-dir=<path>` is set and the expected subdirectories exist,
-`xsh` switches each step to `dpkg -i` / local `kubectl apply -f`. Anything
-missing falls back to the online path for that component only — partial
-offline mode is supported.
+Prepare a Kubernetes offline bundle on a networked host that matches the
+target distro family / architecture. The bundle command uses Docker to pull
+and export Kubernetes image archives, so Docker must be available on the
+networked preparation host:
+
+```bash
+sudo ./xsh k8s bundle --runtime=containerd --version v1.35.0 --output-dir ./xsh-k8s-offline
+```
+
+The command leaves both `./xsh-k8s-offline/` and
+`./xsh-k8s-offline.tar.gz`. Move the archive to the offline host, extract it,
+then pass the extracted directory to the installer:
+
+```bash
+sudo ./xsh k8s --assets-dir ./xsh-k8s-offline
+sudo ./xsh k8s join --assets-dir ./xsh-k8s-offline \
+  --master=192.168.1.10:6443 \
+  --token=<token> \
+  --discovery-token-ca-cert-hash=sha256:<hash>
+```
+
+When `--assets-dir=<path>` is set, `xsh` validates the bundle before making
+system changes. Missing required assets fail fast with a clear error instead
+of falling back to online downloads.
 
 Expected layout under `--assets-dir`:
 
@@ -148,8 +168,9 @@ Expected layout under `--assets-dir`:
 └── components.yaml         # metrics-server manifest
 ```
 
-The resource lookup order matches the `--assets-dir` flag, then the binary's
-own directory (`./assets/`), then `/var/cache/xsh/v<ver>/`.
+The bundle command currently targets Kubernetes install flows (`xsh k8s` and
+`xsh k8s join`). Standalone `xsh docker` offline bundle preparation is not part
+of this MVP.
 
 ## How rollback works
 
