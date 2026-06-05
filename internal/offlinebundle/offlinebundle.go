@@ -10,6 +10,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	osexec "os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -96,6 +97,7 @@ type hostInfo struct {
 
 type dependencies struct {
 	Runner        commandRunner
+	LookPath      func(string) (string, error)
 	Download      func(url, dst string) error
 	DetectHost    func() (hostInfo, error)
 	EnsureDocker  func(context.Context) error
@@ -124,6 +126,7 @@ func defaultDependencies() dependencies {
 	runner := execRunner{}
 	return dependencies{
 		Runner:        runner,
+		LookPath:      osexec.LookPath,
 		Download:      xexec.Download,
 		DetectHost:    detectHost,
 		EnsureDocker:  aptrepo.EnsureDockerRepo,
@@ -150,6 +153,10 @@ func prepare(ctx context.Context, opts Options, deps dependencies) (Result, erro
 	archivePath, err = filepath.Abs(archivePath)
 	if err != nil {
 		return Result{}, fmt.Errorf("resolve archive path: %w", err)
+	}
+
+	if err := ensureRequiredCommands(opts, deps.LookPath); err != nil {
+		return Result{}, err
 	}
 
 	host, err := deps.DetectHost()
@@ -226,6 +233,31 @@ func validateOptions(opts Options) error {
 	}
 	if opts.ImageTool != "docker" {
 		return fmt.Errorf("invalid image tool %q (only docker is supported)", opts.ImageTool)
+	}
+	return nil
+}
+
+func ensureRequiredCommands(opts Options, lookPath func(string) (string, error)) error {
+	if lookPath == nil {
+		lookPath = osexec.LookPath
+	}
+	for _, cmd := range []struct {
+		name    string
+		purpose string
+	}{
+		{name: "apt-get", purpose: "k8s bundle apt package downloads"},
+		{name: "dpkg", purpose: "k8s bundle host architecture detection"},
+		{name: "bash", purpose: "k8s bundle apt repository setup"},
+		{name: "curl", purpose: "k8s bundle apt repository setup"},
+		{name: "gpg", purpose: "k8s bundle apt repository setup"},
+		{name: opts.ImageTool, purpose: "k8s bundle image export"},
+	} {
+		if _, err := lookPath(cmd.name); err != nil {
+			if cmd.name == defaultImageTool {
+				return fmt.Errorf("missing required command %q for k8s bundle image export; install Docker first or run xsh docker -y", cmd.name)
+			}
+			return fmt.Errorf("missing required command %q for %s: %w", cmd.name, cmd.purpose, err)
+		}
 	}
 	return nil
 }
