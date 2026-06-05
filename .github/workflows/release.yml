@@ -2,12 +2,19 @@ name: release
 
 on:
   push:
+    branches:
+      - master
+      - main
     tags:
       - 'v*'
   workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   goreleaser:
@@ -24,6 +31,30 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Prepare release tag
+        id: release-tag
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            tag="${GITHUB_REF_NAME}"
+            date_version="${tag#v}"
+            echo "Using pushed tag ${tag}"
+          else
+            date_version="$(date -u +%Y%m%d)"
+            tag="v${date_version}.0.0"
+            echo "Creating semver release tag ${tag} for ${GITHUB_SHA}"
+
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -f "${tag}" "${GITHUB_SHA}"
+            git push --force origin "refs/tags/${tag}"
+          fi
+
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+          echo "date_version=${date_version}" >> "${GITHUB_OUTPUT}"
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
@@ -32,3 +63,4 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DATE_VERSION: ${{ steps.release-tag.outputs.date_version }}

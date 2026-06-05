@@ -23,13 +23,13 @@ builds:
       - -trimpath
     ldflags:
       - -s -w
-      - -X main.version={{ .Version }}
+      - -X main.version={{ .Env.DATE_VERSION }}
       - -X main.commit={{ .Commit }}
       - -X main.date={{ .Date }}
 
 archives:
   - id: xsh
-    name_template: "xsh_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    name_template: "xsh_{{ .Env.DATE_VERSION }}_{{ .Os }}_{{ .Arch }}"
     formats:
       - tar.gz
     files:
@@ -54,4 +54,7 @@ changelog:
 release:
   draft: false
   prerelease: auto
-  name_template: "xsh {{ .Tag }}"
+  replace_existing_artifacts: true
+  mode: replace
+  target_commitish: "{{ .Commit }}"
+  name_template: "xsh {{ .Env.DATE_VERSION }}"
