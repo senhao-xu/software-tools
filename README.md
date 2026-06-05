@@ -37,17 +37,30 @@ the standard distribution tools (`apt-get`, `dpkg`, `systemctl`, ...).
 ## Install
 
 Pre-built Linux binaries (`amd64` + `arm64`) are published on the
-[Releases page](https://github.com/senhao-xu/software-tools/releases). Pick
-the archive matching your host architecture:
+[Releases page](https://github.com/senhao-xu/software-tools/releases). Download
+the latest release directly by picking the archive matching your host
+architecture:
 
 ```bash
-# Replace <VERSION> with the tag you want (e.g. 0.1.0) and <ARCH> with
-# amd64 (x86_64) or arm64 (aarch64).
-VERSION=0.0.1
+# Use amd64 (x86_64) or arm64 (aarch64).
 ARCH=amd64
 
 curl -L -o xsh.tar.gz \
-  "https://github.com/senhao-xu/software-tools/releases/download/v${VERSION}/xsh_${VERSION}_linux_${ARCH}.tar.gz"
+  "https://github.com/senhao-xu/software-tools/releases/latest/download/xsh_linux_${ARCH}.tar.gz"
+tar -xzf xsh.tar.gz
+sudo install -m 0755 xsh /usr/local/bin/xsh
+xsh version
+```
+
+To pin an exact release instead of following `latest`, use tag `v202606051643`.
+
+```bash
+TAG=v202606051643
+VERSION=202606051643
+ARCH=amd64
+
+curl -L -o xsh.tar.gz \
+  "https://github.com/senhao-xu/software-tools/releases/download/${TAG}/xsh_${VERSION}_linux_${ARCH}.tar.gz"
 tar -xzf xsh.tar.gz
 sudo install -m 0755 xsh /usr/local/bin/xsh
 xsh version
@@ -226,9 +239,9 @@ make fmt vet    # gofmt + go vet
 go test ./...   # unit tests (pure functions only — no Linux/root needed)
 ```
 
-Tagged releases (`vX.Y.Z`) trigger `.github/workflows/release.yml`, which
-runs [GoReleaser](https://goreleaser.com/) to cross-compile `linux/amd64` +
-`linux/arm64`, attach `checksums.txt`, and publish to GitHub Releases. The
+Releases such as `v202606051643` are published by
+`.github/workflows/release.yml`, which cross-compiles `linux/amd64` +
+`linux/arm64`, attaches `checksums.txt`, and publishes to GitHub Releases. The
 binary stamps `main.version` / `main.commit` / `main.date` via `-ldflags`
 so `xsh version` reports the exact build.
 

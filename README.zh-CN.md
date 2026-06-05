@@ -57,14 +57,28 @@
 
 ### 从 Release 安装
 
-项目发布 Linux `amd64` 和 `arm64` 压缩包。将 `<VERSION>` 替换为目标版本号，将 `<ARCH>` 替换为 `amd64` 或 `arm64`：
+项目发布 Linux `amd64` 和 `arm64` 压缩包。按目标架构直接下载 latest 版本：
 
 ```bash
-VERSION=0.0.1
+# ARCH 可选 amd64（x86_64）或 arm64（aarch64）。
 ARCH=amd64
 
 curl -L -o xsh.tar.gz \
-  "https://github.com/senhao-xu/software-tools/releases/download/v${VERSION}/xsh_${VERSION}_linux_${ARCH}.tar.gz"
+  "https://github.com/senhao-xu/software-tools/releases/latest/download/xsh_linux_${ARCH}.tar.gz"
+tar -xzf xsh.tar.gz
+sudo install -m 0755 xsh /usr/local/bin/xsh
+xsh version
+```
+
+如果需要固定到指定 Release，而不是跟随 `latest`，使用 tag `v202606051643`。
+
+```bash
+TAG=v202606051643
+VERSION=202606051643
+ARCH=amd64
+
+curl -L -o xsh.tar.gz \
+  "https://github.com/senhao-xu/software-tools/releases/download/${TAG}/xsh_${VERSION}_linux_${ARCH}.tar.gz"
 tar -xzf xsh.tar.gz
 sudo install -m 0755 xsh /usr/local/bin/xsh
 xsh version
@@ -287,7 +301,7 @@ sudo xsh k8s join --assets-dir ./xsh-k8s-offline \
 
 ### `xsh version`
 
-打印版本、commit 和构建时间。Release 构建由 GoReleaser 通过 `-ldflags` 注入这些信息，本地构建会显示 `dev`、`none`、`unknown`。
+打印版本、commit 和构建时间。Release 构建通过 `-ldflags` 注入这些信息，本地构建会显示 `dev`、`none`、`unknown`。
 
 ## 安装流程与权限说明
 
@@ -369,7 +383,7 @@ make vet    # go vet ./...
 - Worker join
 - 独立 Docker 安装
 
-Release 由 `.github/workflows/release.yml` 触发，tag 形如 `vX.Y.Z` 时通过 GoReleaser 构建 Linux `amd64` / `arm64` 产物，并生成 `checksums.txt`。
+Release 由 `.github/workflows/release.yml` 发布，例如 `v202606051643`，构建 Linux `amd64` / `arm64` 产物，并生成 `checksums.txt`。
 
 ## 常见问题
 

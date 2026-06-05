@@ -13,11 +13,11 @@ permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
 jobs:
-  goreleaser:
+  release:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -42,9 +42,9 @@ jobs:
             date_version="${tag#v}"
             echo "Using pushed tag ${tag}"
           else
-            date_version="$(date -u +%Y%m%d)"
-            tag="v${date_version}.0.0"
-            echo "Creating semver release tag ${tag} for ${GITHUB_SHA}"
+            date_version="$(TZ=Asia/Shanghai date +%Y%m%d%H%M)"
+            tag="v${date_version}"
+            echo "Creating timestamp release tag ${tag} for ${GITHUB_SHA}"
 
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -52,15 +52,70 @@ jobs:
             git push --force origin "refs/tags/${tag}"
           fi
 
+          if [[ ! "${tag}" =~ ^v[0-9]{12}$ ]]; then
+            echo "::error::Release tag must match vYYYYMMDDHHMM, for example v202606051643"
+            exit 1
+          fi
+
           echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
           echo "date_version=${date_version}" >> "${GITHUB_OUTPUT}"
 
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          distribution: goreleaser
-          version: '~> v2'
-          args: release --clean
+      - name: Build archives
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DATE_VERSION: ${{ steps.release-tag.outputs.date_version }}
+          VERSION: ${{ steps.release-tag.outputs.date_version }}
+        run: |
+          set -euo pipefail
+
+          build_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          mkdir -p dist
+
+          for arch in amd64 arm64; do
+            workdir="dist/build/linux_${arch}"
+            mkdir -p "${workdir}"
+
+            CGO_ENABLED=0 GOOS=linux GOARCH="${arch}" go build \
+              -trimpath \
+              -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${GITHUB_SHA} -X main.date=${build_date}" \
+              -o "${workdir}/xsh" \
+              ./cmd/xsh
+
+            cp LICENSE README.md "${workdir}/"
+            archive="xsh_${VERSION}_linux_${arch}.tar.gz"
+            latest_archive="xsh_linux_${arch}.tar.gz"
+
+            tar -C "${workdir}" -czf "dist/${archive}" .
+            cp "dist/${archive}" "dist/${latest_archive}"
+          done
+
+          (cd dist && sha256sum xsh_${VERSION}_linux_*.tar.gz xsh_linux_*.tar.gz > checksums.txt)
+
+      - name: Publish GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.release-tag.outputs.tag }}
+          VERSION: ${{ steps.release-tag.outputs.date_version }}
+        run: |
+          set -euo pipefail
+
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release edit "${TAG}" \
+              --title "xsh ${VERSION}" \
+              --notes "Release ${TAG}" \
+              --latest
+          else
+            gh release create "${TAG}" \
+              --verify-tag \
+              --title "xsh ${VERSION}" \
+              --notes "Release ${TAG}" \
+              --latest
+          fi
+
+          gh release upload "${TAG}" \
+            dist/xsh_${VERSION}_linux_amd64.tar.gz \
+            dist/xsh_${VERSION}_linux_arm64.tar.gz \
+            dist/xsh_linux_amd64.tar.gz \
+            dist/xsh_linux_arm64.tar.gz \
+            dist/checksums.txt \
+            --clobber
