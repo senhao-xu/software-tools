@@ -97,22 +97,28 @@ func Install(_ context.Context, version string) error {
 	if info.Codename == "" {
 		return fmt.Errorf("VERSION_CODENAME missing in /etc/os-release")
 	}
+	log.Info("cridockerd: detected OS distro=%s version=%s codename=%s",
+		info.ID, info.VersionID, info.Codename)
 
 	arch, err := xexec.RunOutput("dpkg", "--print-architecture")
 	if err != nil {
 		return fmt.Errorf("dpkg --print-architecture: %w", err)
 	}
 	arch = strings.TrimSpace(arch)
+	log.Info("cridockerd: dpkg architecture=%s", arch)
 
 	url, err := BuildURL(version, info.ID, info.Codename, arch)
 	if err != nil {
 		return err
 	}
+	log.Info("cridockerd: release artifact URL: %s", url)
+	log.Info("cridockerd: download/cache path: %s", tmpDeb)
 
 	if err := xexec.Download(url, tmpDeb); err != nil {
 		return fmt.Errorf("download cri-dockerd (need offline .deb or network): %w", err)
 	}
 
+	log.Info("cridockerd: installing %s with dpkg", tmpDeb)
 	if err := xexec.Run("dpkg", "-i", tmpDeb); err != nil {
 		// Same dep-fixup dance as the existing runtime/docker.installCRIDockerd:
 		// let apt resolve missing deps then retry dpkg once.

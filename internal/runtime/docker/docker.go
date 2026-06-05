@@ -54,13 +54,14 @@ const (
 // Install installs and configures docker + cri-dockerd. Offline path is tried
 // first when AssetsDir is given; on missing/empty deb dir we fall back online.
 func Install(ctx context.Context, opts Options) error {
-	log.Info("runtime/docker: install start")
+	log.Info("runtime/docker: install start (assets-dir=%q, mirror=%q)", opts.AssetsDir, opts.Mirror)
 
 	installed, err := tryOfflineInstall(opts)
 	if err != nil {
 		return err
 	}
 	if !installed {
+		log.Info("runtime/docker: offline docker debs not used; using online install")
 		if err := onlineInstall(ctx); err != nil {
 			return err
 		}
@@ -73,6 +74,7 @@ func Install(ctx context.Context, opts Options) error {
 	if err := xexec.Run("systemctl", "daemon-reload"); err != nil {
 		log.Warn("systemctl daemon-reload: %v", err)
 	}
+	log.Info("runtime/docker: enabling and starting docker + cri-docker services")
 	if err := xexec.Run("systemctl", "enable", "--now", "docker", "cri-docker"); err != nil {
 		return fmt.Errorf("enable docker/cri-docker: %w", err)
 	}
@@ -107,6 +109,7 @@ func tryOfflineInstall(opts Options) (bool, error) {
 		return false, nil
 	}
 	debDir := filepath.Join(opts.AssetsDir, "deb", "docker")
+	log.Info("runtime/docker: checking offline docker deb dir %s", debDir)
 	info, err := os.Stat(debDir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -136,6 +139,7 @@ func tryOfflineInstall(opts Options) (bool, error) {
 		return false, nil
 	}
 	sort.Strings(debs)
+	log.Info("runtime/docker: offline debs (%d): %s", len(debs), strings.Join(pathBasenames(debs), ", "))
 
 	args := append([]string{"-i"}, debs...)
 	if err := xexec.Run("dpkg", args...); err != nil {
@@ -156,6 +160,7 @@ func tryOfflineInstall(opts Options) (bool, error) {
 // --- online ----------------------------------------------------------------
 
 func onlineInstall(ctx context.Context) error {
+	log.Info("runtime/docker: online install via Docker apt repo")
 	if err := aptrepo.EnsureDockerRepo(ctx); err != nil {
 		return err
 	}
@@ -163,10 +168,12 @@ func onlineInstall(ctx context.Context) error {
 		"docker-ce", "docker-ce-cli", "containerd.io",
 		"docker-buildx-plugin", "docker-compose-plugin", "docker-ce-rootless-extras",
 	}
+	log.Info("runtime/docker: installing packages: %s", strings.Join(pkgs, ", "))
 	if err := xexec.Run("apt-get", append([]string{"install", "-y"}, pkgs...)...); err != nil {
 		return fmt.Errorf("apt-get install docker: %w", err)
 	}
 
+	log.Info("runtime/docker: installing cri-dockerd version %s", cridockerd.DefaultVersion)
 	if err := cridockerd.Install(ctx, cridockerd.DefaultVersion); err != nil {
 		return fmt.Errorf("install cri-dockerd: %w", err)
 	}
@@ -194,6 +201,8 @@ func writeDaemonJSON() error {
 	if err != nil {
 		return fmt.Errorf("marshal daemon.json: %w", err)
 	}
+	log.Info("runtime/docker: rendering %s (log-driver=json-file, max-size=100m, max-file=3, cgroup-driver=systemd)",
+		daemonJSONPath)
 
 	return writeFileIfChanged(daemonJSONPath, body, 0o644)
 }
@@ -233,4 +242,12 @@ func writeFileIfChanged(path string, content []byte, perm os.FileMode) error {
 	}
 	log.Info("runtime/docker: wrote %s", path)
 	return nil
+}
+
+func pathBasenames(paths []string) []string {
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		out = append(out, filepath.Base(p))
+	}
+	return out
 }

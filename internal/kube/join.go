@@ -49,7 +49,7 @@ type JoinOptions struct {
 // Failure bubbles up so the caller can chain ResetJoin followed by the rest of
 // the rollback chain (kube.Rollback -> runtime.Rollback -> sysprep.Rollback).
 func Join(_ context.Context, opts JoinOptions) error {
-	log.Info("kubejoin: starting kubeadm join")
+	log.Info("kubejoin: starting kubeadm join (master=%q, runtime=%q)", opts.Master, opts.Runtime)
 
 	if err := validateJoinOptions(opts); err != nil {
 		return err
@@ -102,6 +102,7 @@ func validateJoinOptions(opts JoinOptions) error {
 // worker land on the same runtime.
 func runKubeadmJoin(opts JoinOptions) error {
 	sock := criSocket(opts.Runtime)
+	log.Info("kubejoin: running kubeadm join with cri-socket=%s (token and CA hash are passed to kubeadm)", sock)
 	args := []string{
 		"join", opts.Master,
 		"--token=" + opts.Token,

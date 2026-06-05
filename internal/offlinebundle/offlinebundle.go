@@ -169,6 +169,8 @@ func prepare(ctx context.Context, opts Options, deps dependencies) (Result, erro
 	}
 
 	minor := minorVersion(opts.Version)
+	log.Info("k8s bundle: requested Kubernetes version %s; apt repo minor = %s", opts.Version, minor)
+	log.Info("k8s bundle: Kubernetes .deb downloads are not patch-pinned; apt will download the newest patch currently available in %s", minor)
 	if err := deps.EnsureDocker(ctx); err != nil {
 		return Result{}, fmt.Errorf("ensure docker apt repo: %w", err)
 	}
@@ -316,6 +318,8 @@ func downloadDebs(r commandRunner, dir string, packages []string) error {
 	if err := os.MkdirAll(filepath.Join(dir, "partial"), 0o755); err != nil {
 		return fmt.Errorf("mkdir apt archive dir: %w", err)
 	}
+	log.Info("offline bundle: downloading %d apt package(s) into %s: %s",
+		len(packages), dir, strings.Join(packages, ", "))
 	args := []string{
 		"-o", "Dir::Cache::archives=" + dir,
 		"install",
@@ -327,7 +331,38 @@ func downloadDebs(r commandRunner, dir string, packages []string) error {
 	if err := r.Run("apt-get", args...); err != nil {
 		return err
 	}
+	logDebsInDir("offline bundle", dir)
 	return nil
+}
+
+func logDebsInDir(prefix, dir string) {
+	debs, err := debBasenames(dir)
+	if err != nil {
+		log.Warn("%s: list downloaded debs in %s: %v", prefix, dir, err)
+		return
+	}
+	if len(debs) == 0 {
+		log.Warn("%s: no .deb files found in %s after apt download", prefix, dir)
+		return
+	}
+	log.Info("%s: %s now contains %d .deb file(s): %s",
+		prefix, dir, len(debs), strings.Join(debs, ", "))
+}
+
+func debBasenames(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	var debs []string
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".deb") {
+			continue
+		}
+		debs = append(debs, e.Name())
+	}
+	sort.Strings(debs)
+	return debs, nil
 }
 
 func downloadCRIDockerd(_ context.Context, deps dependencies, host hostInfo, debDir string) error {

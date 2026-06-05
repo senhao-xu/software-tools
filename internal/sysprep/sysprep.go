@@ -61,6 +61,7 @@ var ipvsModules = []string{
 // Run executes all sysprep substeps in order. Any failure returns immediately;
 // the caller is responsible for invoking Rollback.
 func Run(_ context.Context, opts Options) error {
+	log.Info("sysprep: starting system preparation (assets-dir=%q)", opts.AssetsDir)
 	if err := disableFirewall(); err != nil {
 		return fmt.Errorf("disable firewall: %w", err)
 	}
@@ -106,6 +107,7 @@ func disableFirewall() error {
 
 	if _, err := exec.LookPath("ufw"); err == nil {
 		handled = true
+		log.Info("sysprep: ufw detected, disabling service and rules")
 		if err := xexec.Run("systemctl", "disable", "--now", "ufw"); err != nil {
 			log.Warn("ufw systemctl disable: %v", err)
 		}
@@ -116,6 +118,7 @@ func disableFirewall() error {
 
 	if _, err := exec.LookPath("firewall-cmd"); err == nil {
 		handled = true
+		log.Info("sysprep: firewalld detected, disabling service")
 		if err := xexec.Run("systemctl", "disable", "--now", "firewalld"); err != nil {
 			log.Warn("firewalld systemctl disable: %v", err)
 		}
@@ -167,6 +170,7 @@ func disableSwap() error {
 	log.Info("sysprep: disable swap ...")
 
 	if hasActiveSwap() {
+		log.Info("sysprep: active swap detected, running swapoff -a")
 		if err := xexec.Run("swapoff", "-a"); err != nil {
 			return fmt.Errorf("swapoff -a: %w", err)
 		}
@@ -208,6 +212,7 @@ func commentFstabSwap() error {
 
 	out, changed := commentSwapLines(string(raw))
 	if !changed {
+		log.Info("sysprep: no uncommented swap entries found in %s", fstabPath)
 		return nil
 	}
 	if err := os.WriteFile(fstabPath, []byte(out), 0o644); err != nil {
@@ -255,6 +260,7 @@ func commentSwapLines(content string) (string, bool) {
 
 func writeSysctl() error {
 	log.Info("sysprep: write sysctl ...")
+	log.Info("sysprep: sysctl drop-in %s enables bridge netfilter and IPv4 forwarding", sysctlPath)
 	if err := writeFileIfChanged(sysctlPath, []byte(sysctlContent), 0o644); err != nil {
 		return err
 	}
@@ -269,6 +275,7 @@ func writeSysctl() error {
 
 func loadKernelModules() error {
 	log.Info("sysprep: load kernel modules ...")
+	log.Info("sysprep: persistent module files: %s, %s", modulesK8sPath, modulesIPVSPath)
 
 	// br_netfilter is required for k8s; failure is fatal.
 	if err := xexec.Run("modprobe", "br_netfilter"); err != nil {
@@ -282,6 +289,7 @@ func loadKernelModules() error {
 
 	// IPVS modules: best-effort. ip_conntrack may be renamed to nf_conntrack on
 	// newer kernels; either way we don't abort the install.
+	log.Info("sysprep: loading IPVS modules best-effort: %s", strings.Join(ipvsModules, ", "))
 	for _, m := range ipvsModules {
 		if err := xexec.Run("modprobe", m); err != nil {
 			log.Warn("modprobe %s: %v", m, err)
@@ -304,6 +312,7 @@ func installIPVSTools(opts Options) error {
 
 	if opts.AssetsDir != "" {
 		ipvsDir := filepath.Join(opts.AssetsDir, "deb", "ipvs")
+		log.Info("sysprep: checking offline ipvs deb dir %s", ipvsDir)
 		if info, err := os.Stat(ipvsDir); err == nil && info.IsDir() {
 			debs, err := findDebs(ipvsDir)
 			if err != nil {
@@ -312,6 +321,7 @@ func installIPVSTools(opts Options) error {
 			if len(debs) == 0 {
 				log.Warn("offline ipvs dir %s has no .deb files, falling back to online apt", ipvsDir)
 			} else {
+				log.Info("sysprep: offline ipvs debs (%d): %s", len(debs), strings.Join(pathBasenames(debs), ", "))
 				args := append([]string{"-i"}, debs...)
 				if err := xexec.Run("dpkg", args...); err != nil {
 					return fmt.Errorf("dpkg -i ipvs debs: %w", err)
@@ -323,6 +333,7 @@ func installIPVSTools(opts Options) error {
 	}
 
 	// Online path.
+	log.Info("sysprep: installing ipvs tools online: ipset, ipvsadm")
 	if err := xexec.Run("apt-get", "update"); err != nil {
 		log.Warn("apt-get update: %v", err)
 	}
@@ -371,4 +382,12 @@ func writeFileIfChanged(path string, content []byte, perm os.FileMode) error {
 	}
 	log.Info("sysprep: wrote %s", path)
 	return nil
+}
+
+func pathBasenames(paths []string) []string {
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		out = append(out, filepath.Base(p))
+	}
+	return out
 }

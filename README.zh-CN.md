@@ -11,10 +11,12 @@
 - 一键初始化 Kubernetes 控制平面：`xsh k8s`
 - 将当前节点加入已有集群：`xsh k8s join`
 - 为 Kubernetes 安装流程准备离线资源包：`xsh k8s bundle`
+- 卸载 Kubernetes，并可选择是否同时卸载容器运行时：`xsh k8s uninstall`
 - 安装独立 Docker CE 环境：`xsh docker`
 - 支持 `containerd` 和 `docker + cri-dockerd` 两种 Kubernetes 容器运行时
-- 支持在线安装，也支持通过 `--assets-dir` 使用 Kubernetes 离线资源
-- 支持 `--mirror=cn`，将 Kubernetes apt 源与镜像仓库切换到国内镜像
+- 支持在线安装，也支持通过 `--assets-dir` 使用经过校验的 Kubernetes 离线资源
+- 支持 `--mirror=cn`，将 Kubernetes apt 源与镜像仓库切换到国内镜像；Docker 包仍使用 Docker 官方 apt 源
+- 安装日志会输出在线/离线路径、包列表、关键配置文件和服务启动信息，便于排查
 - 安装前检测已有 Docker / containerd / kubeadm / kubelet 等组件，并可按提示清理后重装
 - 各安装步骤尽量保持可重复执行；失败时按步骤做 best-effort 回滚
 
@@ -31,7 +33,6 @@
 
 - 多控制平面高可用集群
 - Kubernetes 版本升级流程
-- 专门的卸载子命令
 - Debian / Ubuntu 之外的发行版，例如 CentOS、Rocky、AlmaLinux、RHEL、SUSE、Arch
 - flannel 之外的 CNI 自动部署
 
@@ -170,6 +171,24 @@ sudo xsh docker --major=27
 
 独立 Docker 安装会配置 Docker apt 源，安装 `docker-ce`、`docker-ce-cli`、`containerd.io`、Buildx、Compose 等包，并写入 `/etc/docker/daemon.json`。当前独立 Docker 命令不提供离线 bundle 子命令。
 
+### 卸载 Kubernetes
+
+默认会先确认是否卸载 Kubernetes；`--remove-runtime=ask` 会继续询问是否同时卸载容器运行时：
+
+```bash
+sudo xsh k8s uninstall
+```
+
+脚本或非交互环境可以显式指定运行时选择。`-y` 只跳过 Kubernetes 卸载确认；如果没有显式指定 `--remove-runtime`，不会默认删除 Docker 或 containerd：
+
+```bash
+sudo xsh k8s uninstall -y --remove-runtime=none
+sudo xsh k8s uninstall -y --remove-runtime=containerd
+sudo xsh k8s uninstall -y --remove-runtime=docker
+sudo xsh k8s uninstall -y --remove-runtime=all
+sudo xsh k8s uninstall -y --remove-runtime=auto
+```
+
 ## Kubernetes 离线模式
 
 在一台有网络、系统发行版和 CPU 架构尽量与目标主机一致的准备机上生成离线资源：
@@ -180,6 +199,13 @@ sudo xsh k8s bundle \
   --version=v1.35.0 \
   --output-dir ./xsh-k8s-offline
 ```
+
+重要版本行为：`--version v1.35.0` 会选择 `v1.35` Kubernetes apt 源，并用
+`v1.35.0` 生成 kubeadm 镜像列表；但 apt 下载 `.deb` 时不会固定 patch，
+所以离线包里可能出现同 minor 的更新包，例如
+`kubeadm_1.35.5-1.1_amd64.deb`。离线安装时，`dpkg` 会安装离线包里的实际
+`.deb` 文件；如果安装后的 kubeadm patch 与 `--version` 不一致，`xsh` 只会
+打印警告。
 
 命令会生成目录和压缩包：
 
@@ -204,7 +230,7 @@ sudo xsh k8s join --assets-dir ./xsh-k8s-offline \
   --discovery-token-ca-cert-hash=sha256:<hash>
 ```
 
-`--assets-dir` 会在安装开始前校验 Kubernetes 离线包。控制平面安装要求包含镜像归档和 CNI / metrics-server YAML，Worker 加入不要求控制平面专用资源。
+`--assets-dir` 会在安装开始前校验 Kubernetes 离线包。缺失必需资源时会直接失败并提示缺失项，不会静默回退到在线下载。校验通过后，安装会使用离线包中的本地 `.deb`、YAML 和镜像归档。控制平面安装要求包含镜像归档和 CNI / metrics-server YAML，Worker 加入不要求控制平面专用资源。
 
 期望目录结构：
 
@@ -226,6 +252,19 @@ sudo xsh k8s join --assets-dir ./xsh-k8s-offline \
 
 离线包准备命令需要本机 Docker 可用，因为它会拉取并导出 Kubernetes 镜像。`--mirror=cn` 可用于离线包准备阶段，将 Kubernetes 包源和镜像仓库切换到国内镜像。
 
+## 如何阅读安装日志
+
+默认 `[INFO]` 日志会输出排查时最常用的信息：
+
+- 每个步骤选择了离线资源还是在线源
+- 离线包下载到了哪些 `.deb`，离线安装实际使用哪些 `.deb`
+- `--version` 被解析成哪个 Kubernetes minor 源
+- Docker / containerd 安装了哪些包，写入了哪些配置文件
+- systemd 服务何时被 enable / start
+
+如果还需要查看 `apt-get`、`dpkg`、`kubeadm`、`kubectl`、`docker`、`ctr`
+等命令的原始输出，再加 `-v` / `--verbose`。
+
 ## 命令参考
 
 ### `xsh k8s`
@@ -235,7 +274,7 @@ sudo xsh k8s join --assets-dir ./xsh-k8s-offline \
 | 参数 | 默认值 | 说明 |
 | --- | --- | --- |
 | `--runtime` | `containerd` | 容器运行时，可选 `containerd` 或 `docker` |
-| `--version` | `v1.35.0` | Kubernetes 版本 |
+| `--version` | `v1.35.0` | 传给 kubeadm 和镜像选择的 Kubernetes 版本 |
 | `--pod-cidr` | `10.244.0.0/16` | Pod 网段，默认匹配 flannel |
 | `--service-cidr` | `10.96.0.0/12` | Service 网段 |
 | `--hostname` | `master` | 设置节点主机名 |
@@ -249,6 +288,11 @@ sudo xsh k8s join --assets-dir ./xsh-k8s-offline \
 | 参数 | 说明 |
 | --- | --- |
 | `-v`, `--verbose` | 输出 apt、dpkg、kubeadm 等命令的详细日志 |
+
+版本说明：在线安装 Kubernetes 包和执行 `xsh k8s bundle` 时，`--version`
+会先被解析成 Kubernetes minor apt 源，例如 `v1.35.0` 会选择 `v1.35`
+源。但 `.deb` 包没有固定到 patch 版本，apt 会安装或下载该 minor 源中
+当前最新的 patch 包。
 
 ### `xsh k8s join`
 
@@ -276,6 +320,18 @@ sudo xsh k8s join --assets-dir ./xsh-k8s-offline \
 | `--mirror` | 空 | 传 `cn` 使用国内 Kubernetes 包源和镜像仓库 |
 | `--output-dir` | `xsh-k8s-offline` | 输出的离线资源目录 |
 | `--archive` | `<output-dir>.tar.gz` | 输出压缩包路径 |
+
+### `xsh k8s uninstall`
+
+卸载当前节点上的 Kubernetes 控制平面或 Worker 状态：执行 `kubeadm reset`、停止 kubelet、解除 kubeadm / kubelet / kubectl hold、purge Kubernetes 包，并删除 Kubernetes / CNI / etcd / kubelet 相关目录以及 Kubernetes apt 源和 keyring。
+
+| 参数 | 默认值 | 说明 |
+| --- | --- | --- |
+| `--remove-runtime` | `ask` | 运行时卸载选择：`ask`、`none`、`docker`、`containerd`、`all` 或 `auto` |
+| `--cri-runtime` | `auto` | `kubeadm reset` 使用的 CRI socket：`auto`、`containerd` 或 `docker` |
+| `-y`, `--yes` | `false` | 跳过 Kubernetes 卸载确认 |
+
+运行时卸载是显式选择项。`--remove-runtime=docker` 会停止 docker 和 cri-docker，purge Docker 包以及 `cri-dockerd`，并删除 `/etc/docker`、`/var/lib/docker`。`--remove-runtime=containerd` 会停止 containerd、purge `containerd.io`，并删除 `/etc/containerd`、`/var/lib/containerd`。`--remove-runtime=all` 会同时删除两类运行时数据。`--remove-runtime=auto` 会删除检测到的 Docker/containerd 运行时。`--cri-runtime` 只选择 `kubeadm reset` 使用的 socket，不表示卸载哪个运行时。
 
 ### `xsh docker`
 
@@ -335,6 +391,7 @@ Kubernetes 控制平面大致流程：
 | `internal/network/` | 部署 flannel 和 metrics-server |
 | `internal/offlinebundle/` | 下载 .deb、YAML、镜像并生成 Kubernetes 离线包 |
 | `internal/assets/` | 校验 `--assets-dir` 的资源完整性 |
+| `internal/uninstall/` | Kubernetes 和可选容器运行时卸载计划与执行 |
 | `internal/dockerinstall/` | 独立 Docker CE 安装流程 |
 | `internal/aptrepo/` | Docker 和 Kubernetes apt 源、keyring、发行版映射 |
 | `internal/osinfo/` | `/etc/os-release` 解析和支持系统校验 |
@@ -383,6 +440,12 @@ sudo xsh k8s --mirror=cn
 ```
 
 如果 GitHub 上的 flannel / metrics-server YAML 仍然访问慢，建议提前用 `xsh k8s bundle` 准备离线资源，并在安装时传 `--assets-dir`。
+
+### 指定了 `v1.35.0`，但离线包里出现 `1.35.5`
+
+这是当前包下载策略下的正常现象。`--version v1.35.0` 选择的是
+`v1.35` apt 源，apt 会下载这个 minor 源里当前最新的 patch 包，例如
+`1.35.5-1.1`。安装日志会同时打印请求的版本和最终使用的 `.deb` 文件名。
 
 ### `kubeadm init` 拉镜像卡住
 

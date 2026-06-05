@@ -17,11 +17,14 @@ the standard distribution tools (`apt-get`, `dpkg`, `systemctl`, ...).
   docker + cri-dockerd)
 - Worker `join` subcommand sharing the same prep / runtime / kube install
   chain
+- Kubernetes uninstall subcommand with explicit runtime removal choices
 - Standalone Docker installer (mirrors the docker.senhao.eu.cc recipe)
-- Dual install mode: offline (`--assets-dir`) or online (auto-fallback to
-  official apt repos + GitHub releases)
-- `--mirror=cn` switches packages to `mirrors.aliyun.com` and Kubernetes
-  images to `registry.aliyuncs.com/google_containers`
+- Dual install mode: online installs, or validated Kubernetes offline bundles
+  via `--assets-dir`
+- `--mirror=cn` switches the Kubernetes apt repo and image repository to
+  Aliyun; Docker packages still use Docker's official apt repo
+- Detailed install logs show the selected online/offline path, package lists,
+  config files, and service starts
 - Step-by-step rollback on failure; idempotent re-runs
 
 ## System Requirements
@@ -94,6 +97,25 @@ sudo ./xsh docker              # latest docker-ce
 sudo ./xsh docker --major=27   # pin to 27.x
 ```
 
+### Uninstall Kubernetes
+
+```bash
+sudo ./xsh k8s uninstall
+```
+
+The default `--remove-runtime=ask` removes Kubernetes state first and asks
+whether to also remove the container runtime. `-y` skips the Kubernetes
+confirmation but does not remove Docker/containerd unless you say so
+explicitly:
+
+```bash
+sudo ./xsh k8s uninstall -y --remove-runtime=none
+sudo ./xsh k8s uninstall -y --remove-runtime=containerd
+sudo ./xsh k8s uninstall -y --remove-runtime=docker
+sudo ./xsh k8s uninstall -y --remove-runtime=all
+sudo ./xsh k8s uninstall -y --remove-runtime=auto
+```
+
 ## CLI Reference
 
 ### `xsh k8s` — master one-shot
@@ -101,15 +123,20 @@ sudo ./xsh docker --major=27   # pin to 27.x
 | Flag             | Default              | Description                                                  |
 |------------------|----------------------|--------------------------------------------------------------|
 | `--runtime`      | `containerd`         | Container runtime: `containerd` or `docker`                  |
-| `--version`      | `v1.35.0`            | Kubernetes version                                           |
+| `--version`      | `v1.35.0`            | Kubernetes version passed to kubeadm and image selection     |
 | `--pod-cidr`     | `10.244.0.0/16`      | Pod network CIDR (flannel-locked; do not change)             |
 | `--service-cidr` | `10.96.0.0/12`       | Service CIDR                                                 |
 | `--hostname`     | `master`             | Node hostname (set via `hostnamectl`)                        |
 | `--advertise`    | auto-detect          | `--apiserver-advertise-address`; auto = outbound UDP probe   |
-| `--mirror`       | _empty_              | `cn` switches apt repo + image registry to Aliyun            |
+| `--mirror`       | _empty_              | `cn` switches Kubernetes apt repo + image registry to Aliyun |
 | `--assets-dir`   | _empty_              | Offline assets directory (see below)                         |
 | `-y`, `--yes`    | `false`              | Skip the Step 0 overwrite prompt (defaults to Overwrite)     |
 | `-v`, `--verbose`| `false`              | Pass-through verbose output from apt/dpkg/kubeadm            |
+
+Version note: online Kubernetes package installation and `xsh k8s bundle`
+select the Kubernetes minor apt repo from `--version` (`v1.35.0` -> `v1.35`),
+but the `.deb` packages are not patch-pinned. Apt installs or downloads the
+newest patch currently available in that minor repo.
 
 ### `xsh k8s join` — worker join
 
@@ -122,6 +149,38 @@ inputs:
 | `--master`                        | yes      | Control-plane endpoint, e.g. `10.0.0.10:6443`         |
 | `--token`                         | yes      | Bootstrap token from master                           |
 | `--discovery-token-ca-cert-hash`  | yes      | `sha256:...` CA hash from master                      |
+
+### `xsh k8s bundle` — offline bundle
+
+| Flag           | Default             | Description                                      |
+|----------------|---------------------|--------------------------------------------------|
+| `--runtime`    | `containerd`        | Prepare assets for `containerd` or `docker`      |
+| `--version`    | `v1.35.0`           | Kubernetes version used for repo/image selection |
+| `--mirror`     | _empty_             | `cn` uses Aliyun for Kubernetes repo/images      |
+| `--output-dir` | `xsh-k8s-offline`   | Output directory for offline assets              |
+| `--archive`    | `<output-dir>.tar.gz` | Output archive path                            |
+
+### `xsh k8s uninstall` — remove Kubernetes
+
+Uninstalls Kubernetes control-plane or worker state with best-effort cleanup:
+`kubeadm reset`, stop kubelet, unhold/purge Kubernetes packages
+(`kubeadm`, `kubelet`, `kubectl`, `kubernetes-cni`, `cri-tools`), and remove
+Kubernetes/CNI/etcd/kubelet directories plus the Kubernetes apt repo/keyring.
+
+| Flag               | Default | Description                                                            |
+|--------------------|---------|------------------------------------------------------------------------|
+| `--remove-runtime` | `ask`   | Runtime removal: `ask`, `none`, `docker`, `containerd`, `all`, `auto`  |
+| `--cri-runtime`    | `auto`  | CRI socket for `kubeadm reset`: `auto`, `containerd`, or `docker`       |
+| `-y`,`--yes`       | `false` | Skip the Kubernetes uninstall confirmation                             |
+
+Runtime cleanup is opt-in. `--remove-runtime=docker` stops Docker and
+cri-dockerd, purges Docker packages plus `cri-dockerd`, and removes
+`/etc/docker` and `/var/lib/docker`. `--remove-runtime=containerd` stops
+containerd, purges `containerd.io`, and removes `/etc/containerd` and
+`/var/lib/containerd`. `--remove-runtime=all` removes both runtime data sets.
+`--remove-runtime=auto` removes every detected Docker/containerd runtime.
+`--cri-runtime` only selects the reset socket; it does not opt in to runtime
+package or data removal.
 
 ### `xsh docker` — standalone Docker
 
@@ -141,6 +200,13 @@ networked preparation host:
 sudo ./xsh k8s bundle --runtime=containerd --version v1.35.0 --output-dir ./xsh-k8s-offline
 ```
 
+Important version behavior: `--version v1.35.0` selects the `v1.35` Kubernetes
+apt repo and the kubeadm image list for `v1.35.0`. The apt download step is not
+patch-pinned, so it may place newer same-minor packages in the bundle, such as
+`kubeadm_1.35.5-1.1_amd64.deb`. During offline installation, `dpkg` installs the
+exact `.deb` files in the bundle; `xsh` only warns if the installed kubeadm
+patch differs from `--version`.
+
 The command leaves both `./xsh-k8s-offline/` and
 `./xsh-k8s-offline.tar.gz`. Move the archive to the offline host, extract it,
 then pass the extracted directory to the installer:
@@ -155,7 +221,9 @@ sudo ./xsh k8s join --assets-dir ./xsh-k8s-offline \
 
 When `--assets-dir=<path>` is set, `xsh` validates the bundle before making
 system changes. Missing required assets fail fast with a clear error instead
-of falling back to online downloads.
+of falling back to online downloads. Once validation passes, the install uses
+the bundle's local `.deb`, YAML, and image archive files for the required
+offline assets.
 
 Expected layout under `--assets-dir`:
 
@@ -174,6 +242,20 @@ The bundle command currently targets Kubernetes install flows (`xsh k8s` and
 `xsh k8s join`). Standalone `xsh docker` offline bundle preparation is not part
 of this MVP.
 
+## Reading install logs
+
+Default `[INFO]` logs now summarize decisions that usually matter during
+troubleshooting:
+
+- whether each step chose offline assets or online repositories
+- which `.deb` files are downloaded into a bundle or installed from a bundle
+- which Kubernetes minor repo is selected from `--version`
+- which Docker/containerd packages and config files are used
+- when system services are enabled and started
+
+Use `-v` / `--verbose` when you also need raw `apt-get`, `dpkg`, `kubeadm`,
+`kubectl`, `docker`, or `ctr` output.
+
 ## How rollback works
 
 - Each Step records its config writes and reverts them on failure. Steps
@@ -182,6 +264,9 @@ of this MVP.
   install begins (when the user picks `Overwrite`). It removes packages,
   apt repos, keyrings, and the `/etc/{docker,containerd,kubernetes,cni}`
   trees — bigger scope than a single Step's Rollback.
+- `xsh k8s uninstall` is the explicit post-install cleanup command. It always
+  removes Kubernetes state and only removes Docker/containerd when
+  `--remove-runtime` or the interactive prompt selects that runtime.
 - A Step's Rollback only undoes what *that step* wrote (e.g. the containerd
   config file, the kubelet apt-mark hold). Apt packages and keyrings stay
   put — they are detect.Cleanup's responsibility, so a subsequent
@@ -193,6 +278,12 @@ of this MVP.
 
 ### `apt-get install kubeadm` fails with 404
 `pkgs.k8s.io` is sometimes blocked from China. Try `--mirror=cn`.
+
+### I requested `v1.35.0`, but the bundle contains `1.35.5` packages
+This is expected with the current package strategy. `--version v1.35.0`
+selects the `v1.35` apt repo; apt then downloads the newest patch available in
+that minor, for example `1.35.5-1.1`. The install log prints both the requested
+version and the exact `.deb` files used.
 
 ### `kubeadm init` hangs at "pulling images"
 Same cause. Use `--mirror=cn` (routes images through
@@ -245,7 +336,7 @@ so `xsh version` reports the exact build.
   but the end-to-end install matrix has not yet been run on Ubuntu in CI
   or by hand — treat Ubuntu support as beta until that pass lands.
 - Not supported (intentionally out of scope): multi-master HA control plane,
-  Kubernetes version upgrade, uninstall subcommand,
+  Kubernetes version upgrade,
   CentOS / Rocky / AlmaLinux / RHEL / SUSE / Arch / other non-Debian-family
   hosts, CNIs other than flannel.
 

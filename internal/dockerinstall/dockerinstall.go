@@ -62,6 +62,11 @@ var dockerPkgs = []string{
 // enabled by the time we get there.
 func Install(ctx context.Context, opts Options) error {
 	log.Info("dockerinstall: install start (major=%d)", opts.Major)
+	if opts.Major == 0 {
+		log.Info("dockerinstall: no Docker major pin requested; apt will install the newest docker-ce available")
+	} else {
+		log.Info("dockerinstall: Docker major pin requested: %d.x", opts.Major)
+	}
 
 	if err := installAptDeps(); err != nil {
 		return err
@@ -83,6 +88,7 @@ func Install(ctx context.Context, opts Options) error {
 		return err
 	}
 
+	log.Info("dockerinstall: enabling and starting docker service")
 	if err := xexec.Run("systemctl", "enable", "--now", "docker"); err != nil {
 		return fmt.Errorf("enable docker: %w", err)
 	}
@@ -114,6 +120,7 @@ func Rollback(_ context.Context, _ Options) error {
 // --- step 1: apt deps ------------------------------------------------------
 
 func installAptDeps() error {
+	log.Info("dockerinstall: installing apt helper packages: ca-certificates, curl, gnupg, lsb-release")
 	if err := xexec.Run("apt-get", "update"); err != nil {
 		log.Warn("apt-get update (pre-deps): %v", err)
 	}
@@ -138,6 +145,7 @@ func installAptDeps() error {
 // component only; the epoch (`<n>:`) is preserved so apt accepts the string.
 func resolveVersion(major int) (string, error) {
 	if major == 0 {
+		log.Info("dockerinstall: skipping apt-cache madison because no major pin was requested")
 		return "", nil
 	}
 
@@ -209,6 +217,8 @@ func writeDaemonJSON() error {
 		},
 		ExecOpts: []string{"native.cgroupdriver=systemd"},
 	}
+	log.Info("dockerinstall: rendering %s (log-driver=%s, max-size=%s, max-file=%s, cgroup-driver=systemd)",
+		daemonJSONPath, cfg.LogDriver, cfg.LogOpts["max-size"], cfg.LogOpts["max-file"])
 	body, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal daemon.json: %w", err)
@@ -237,11 +247,16 @@ func installPackages(version string) error {
 		primary = append(primary, p)
 	}
 
+	if version != "" {
+		log.Info("dockerinstall: pinning docker-ce and docker-ce-cli to apt version %s", version)
+	}
+	log.Info("dockerinstall: installing Docker packages: %s", strings.Join(primary, ", "))
 	args := append([]string{"install", "-y"}, primary...)
 	if err := xexec.Run("apt-get", args...); err != nil {
 		return fmt.Errorf("apt-get install docker: %w", err)
 	}
 
+	log.Info("dockerinstall: installing optional docker-model-plugin when available")
 	if err := xexec.Run("apt-get", "install", "-y", "docker-model-plugin"); err != nil {
 		log.Warn("apt-get install docker-model-plugin (only on newer repos): %v", err)
 	}

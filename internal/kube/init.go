@@ -86,7 +86,10 @@ const (
 // Each step's failure is fatal and bubbles up so the CLI can chain ResetInit
 // followed by the rest of the rollback chain.
 func Init(ctx context.Context, opts InitOptions) error {
-	log.Info("kubeinit: starting kubeadm init")
+	log.Info("kubeinit: starting kubeadm init (runtime=%q, version=%q, mirror=%q, assets-dir=%q)",
+		opts.Runtime, opts.Version, opts.Mirror, opts.AssetsDir)
+	log.Info("kubeinit: service CIDR=%s, pod CIDR=%s, hostname=%q, advertise=%q",
+		opts.ServiceCIDR, opts.PodCIDR, opts.Hostname, opts.Advertise)
 
 	if err := ensureHostname(opts.Hostname); err != nil {
 		return err
@@ -183,8 +186,10 @@ func ensureHostname(want string) error {
 // table has a default route; if it doesn't, the user must pass --advertise.
 func resolveAdvertiseIP(explicit string) (string, error) {
 	if explicit != "" {
+		log.Info("kubeinit: using explicit advertise IP %s", explicit)
 		return explicit, nil
 	}
+	log.Info("kubeinit: probing advertise IP from default route")
 	conn, err := net.Dial("udp", "8.8.8.8:80")
 	if err != nil {
 		return "", fmt.Errorf("probe outbound IP: %w (pass --advertise=<IP> to override)", err)
@@ -267,6 +272,7 @@ func ensureEtcHosts(hostname, ip string) error {
 func preloadImages(opts InitOptions) error {
 	if opts.AssetsDir != "" {
 		imagesDir := filepath.Join(opts.AssetsDir, "images")
+		log.Info("kubeinit: checking offline image archives in %s", imagesDir)
 		tars, err := listTars(imagesDir)
 		if err != nil {
 			return err
@@ -299,10 +305,12 @@ func listTars(dir string) ([]string, error) {
 }
 
 func importOfflineImages(runtime string, tars []string) error {
-	log.Info("kubeinit: importing %d image archive(s) offline", len(tars))
+	log.Info("kubeinit: importing %d image archive(s) offline: %s",
+		len(tars), strings.Join(pathBasenames(tars), ", "))
 	switch runtime {
 	case "docker":
 		for _, tar := range tars {
+			log.Info("kubeinit: docker load %s", tar)
 			if err := xexec.Run("docker", "load", "-i", tar); err != nil {
 				return fmt.Errorf("docker load %s: %w", tar, err)
 			}
@@ -310,6 +318,7 @@ func importOfflineImages(runtime string, tars []string) error {
 	default:
 		// containerd path (also covers empty/default)
 		for _, tar := range tars {
+			log.Info("kubeinit: ctr import %s into namespace k8s.io", tar)
 			if err := xexec.Run("ctr", "-n", "k8s.io", "images", "import", tar); err != nil {
 				return fmt.Errorf("ctr images import %s: %w", tar, err)
 			}
@@ -319,7 +328,11 @@ func importOfflineImages(runtime string, tars []string) error {
 }
 
 func pullOnlineImages(opts InitOptions) error {
-	log.Info("kubeinit: pulling images online")
+	imageRepo := "registry.k8s.io"
+	if opts.Mirror == "cn" {
+		imageRepo = cnImageRepository
+	}
+	log.Info("kubeinit: pulling images online (version=%s, image-repository=%s)", opts.Version, imageRepo)
 	args := []string{"config", "images", "pull",
 		"--kubernetes-version=" + opts.Version,
 	}
@@ -338,6 +351,12 @@ func pullOnlineImages(opts InitOptions) error {
 // prd to make eyeball comparison against logs easy.
 func runKubeadmInit(opts InitOptions, advertise string) error {
 	sock := criSocket(opts.Runtime)
+	imageRepo := "registry.k8s.io"
+	if opts.Mirror == "cn" {
+		imageRepo = cnImageRepository
+	}
+	log.Info("kubeinit: running kubeadm init (version=%s, cri-socket=%s, service-cidr=%s, pod-cidr=%s, advertise=%s, image-repository=%s)",
+		opts.Version, sock, opts.ServiceCIDR, opts.PodCIDR, advertise, imageRepo)
 	args := []string{
 		"init",
 		"--kubernetes-version=" + opts.Version,
@@ -376,6 +395,7 @@ func criSocket(runtime string) string {
 // without su -. The sudo-user mirror is best-effort (WARN on failure) — it's
 // a UX nicety, not a correctness requirement.
 func copyKubeconfig() error {
+	log.Info("kubeinit: copying kubeconfig from %s", adminConfPath)
 	src, err := os.ReadFile(adminConfPath)
 	if err != nil {
 		return fmt.Errorf("read %s (kubeadm init likely failed earlier): %w", adminConfPath, err)
@@ -386,6 +406,7 @@ func copyKubeconfig() error {
 	if err != nil {
 		return err
 	}
+	log.Info("kubeinit: installing kubeconfig for current user home %s", home)
 	if err := installKubeconfig(home, src, os.Getuid(), os.Getgid()); err != nil {
 		return err
 	}
@@ -394,6 +415,7 @@ func copyKubeconfig() error {
 	if u := os.Getenv("SUDO_USER"); u != "" && u != "root" {
 		uid, gid, sudoHome, ok := sudoUserInfo()
 		if ok && sudoHome != "" && sudoHome != home {
+			log.Info("kubeinit: also installing kubeconfig for sudo user %s at %s", u, sudoHome)
 			if err := installKubeconfig(sudoHome, src, uid, gid); err != nil {
 				log.Warn("install kubeconfig for sudo user %s: %v", u, err)
 			}
@@ -495,6 +517,7 @@ func removeControlPlaneTaint() {
 // as the master (otherwise kubeadm picks containerd by default, breaking
 // docker-based clusters).
 func generateJoinCommand(opts InitOptions) error {
+	log.Info("kubeinit: generating worker join command")
 	out, err := xexec.RunOutput("kubeadm", "token", "create", "--print-join-command")
 	if err != nil {
 		return fmt.Errorf("kubeadm token create: %w", err)

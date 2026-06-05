@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"text/template"
 
 	"xsh/internal/aptrepo"
@@ -69,13 +70,14 @@ const configTemplate = `version = 2
 // AssetsDir is given; on missing/empty deb dir we fall back to the online path
 // (no error). On success containerd is enabled and started.
 func Install(ctx context.Context, opts Options) error {
-	log.Info("runtime/containerd: install start")
+	log.Info("runtime/containerd: install start (assets-dir=%q, mirror=%q)", opts.AssetsDir, opts.Mirror)
 
 	installed, err := tryOfflineInstall(opts)
 	if err != nil {
 		return err
 	}
 	if !installed {
+		log.Info("runtime/containerd: offline containerd deb not used; using online install")
 		if err := onlineInstall(ctx); err != nil {
 			return err
 		}
@@ -88,6 +90,7 @@ func Install(ctx context.Context, opts Options) error {
 	if err := xexec.Run("systemctl", "daemon-reload"); err != nil {
 		log.Warn("systemctl daemon-reload: %v", err)
 	}
+	log.Info("runtime/containerd: enabling and starting containerd service")
 	if err := xexec.Run("systemctl", "enable", "--now", "containerd"); err != nil {
 		return fmt.Errorf("enable containerd: %w", err)
 	}
@@ -121,6 +124,7 @@ func tryOfflineInstall(opts Options) (bool, error) {
 		return false, nil
 	}
 	debDir := filepath.Join(opts.AssetsDir, "deb", "docker")
+	log.Info("runtime/containerd: checking offline containerd debs in %s", debDir)
 	info, err := os.Stat(debDir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -141,6 +145,7 @@ func tryOfflineInstall(opts Options) (bool, error) {
 		return false, nil
 	}
 	sort.Strings(matches)
+	log.Info("runtime/containerd: offline debs (%d): %s", len(matches), strings.Join(pathBasenames(matches), ", "))
 
 	args := append([]string{"-i"}, matches...)
 	if err := xexec.Run("dpkg", args...); err != nil {
@@ -153,9 +158,11 @@ func tryOfflineInstall(opts Options) (bool, error) {
 // --- online ----------------------------------------------------------------
 
 func onlineInstall(ctx context.Context) error {
+	log.Info("runtime/containerd: online install via Docker apt repo")
 	if err := aptrepo.EnsureDockerRepo(ctx); err != nil {
 		return err
 	}
+	log.Info("runtime/containerd: installing package: containerd.io")
 	if err := xexec.Run("apt-get", "install", "-y", "containerd.io"); err != nil {
 		return fmt.Errorf("apt-get install containerd.io: %w", err)
 	}
@@ -174,6 +181,12 @@ func writeConfig(opts Options) error {
 	if err != nil {
 		return err
 	}
+	mirrorEndpoint := "none"
+	if opts.Mirror == "cn" {
+		mirrorEndpoint = mirrorRegistryURL
+	}
+	log.Info("runtime/containerd: rendering %s (sandbox-image=%s, registry-mirror=%s)",
+		configPath, sandboxImage(opts), mirrorEndpoint)
 	return writeFileIfChanged(configPath, []byte(rendered), 0o644)
 }
 
@@ -181,11 +194,6 @@ func writeConfig(opts Options) error {
 // as a string. Extracted as a pure function so unit tests can assert on the
 // generated config without touching the filesystem.
 func renderConfigTOML(opts Options) (string, error) {
-	sandbox := defaultSandbox
-	if opts.Mirror == "cn" {
-		sandbox = mirrorSandbox
-	}
-
 	tpl, err := template.New("containerd-config").Parse(configTemplate)
 	if err != nil {
 		return "", fmt.Errorf("parse template: %w", err)
@@ -197,7 +205,7 @@ func renderConfigTOML(opts Options) (string, error) {
 		Mirror         string
 		MirrorEndpoint string
 	}{
-		SandboxImage:   sandbox,
+		SandboxImage:   sandboxImage(opts),
 		Mirror:         opts.Mirror,
 		MirrorEndpoint: mirrorRegistryURL,
 	}
@@ -223,4 +231,19 @@ func writeFileIfChanged(path string, content []byte, perm os.FileMode) error {
 	}
 	log.Info("runtime/containerd: wrote %s", path)
 	return nil
+}
+
+func sandboxImage(opts Options) string {
+	if opts.Mirror == "cn" {
+		return mirrorSandbox
+	}
+	return defaultSandbox
+}
+
+func pathBasenames(paths []string) []string {
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		out = append(out, filepath.Base(p))
+	}
+	return out
 }

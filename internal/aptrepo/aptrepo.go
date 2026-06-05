@@ -141,6 +141,8 @@ func EnsureDockerRepo(_ context.Context) error {
 	if err != nil {
 		return err
 	}
+	log.Info("aptrepo: docker repo target distro=%s version=%s codename=%s url=%s",
+		info.ID, info.VersionID, codename, fmt.Sprintf(dockerLinuxURLPattern, slug))
 
 	if err := installRepoDeps(); err != nil {
 		return err
@@ -151,6 +153,7 @@ func EnsureDockerRepo(_ context.Context) error {
 	}
 
 	if _, err := os.Stat(dockerKeyringPath); errors.Is(err, fs.ErrNotExist) {
+		log.Info("aptrepo: installing docker gpg key to %s", dockerKeyringPath)
 		// curl | gpg --dearmor — no clean way to pipe through xexec.Run, so
 		// shell out via bash -c (matches the existing helpers we are about
 		// to replace in PR2).
@@ -166,6 +169,8 @@ func EnsureDockerRepo(_ context.Context) error {
 		}
 	} else if err != nil {
 		return fmt.Errorf("stat %s: %w", dockerKeyringPath, err)
+	} else {
+		log.Info("aptrepo: docker gpg key already present at %s", dockerKeyringPath)
 	}
 
 	arch, err := xexec.RunOutput("dpkg", "--print-architecture")
@@ -175,10 +180,13 @@ func EnsureDockerRepo(_ context.Context) error {
 	arch = strings.TrimSpace(arch)
 
 	srcLine := DockerSourceLine(slug, codename, arch, dockerKeyringPath)
+	log.Info("aptrepo: docker dpkg architecture=%s", arch)
+	log.Info("aptrepo: docker source line: %s", strings.TrimSpace(srcLine))
 	if err := writeFileIfChanged(dockerSourcesPath, []byte(srcLine), 0o644); err != nil {
 		return err
 	}
 
+	log.Info("aptrepo: refreshing apt metadata after docker repo setup")
 	if err := xexec.Run("apt-get", "update"); err != nil {
 		return fmt.Errorf("apt-get update (post-repo): %w", err)
 	}
@@ -201,8 +209,10 @@ func EnsureK8sRepo(_ context.Context, mirror, k8sMinor string) error {
 	}
 
 	baseURL := K8sRepoBaseURL(mirror, k8sMinor)
+	log.Info("aptrepo: kubernetes repo base URL: %s", baseURL)
 
 	if _, err := os.Stat(k8sKeyringPath); errors.Is(err, fs.ErrNotExist) {
+		log.Info("aptrepo: installing kubernetes gpg key to %s", k8sKeyringPath)
 		curl := "curl -fsSL " + baseURL + "Release.key | " +
 			"gpg --dearmor -o " + k8sKeyringPath
 		if err := xexec.Run("bash", "-c", curl); err != nil {
@@ -213,13 +223,17 @@ func EnsureK8sRepo(_ context.Context, mirror, k8sMinor string) error {
 		}
 	} else if err != nil {
 		return fmt.Errorf("stat %s: %w", k8sKeyringPath, err)
+	} else {
+		log.Info("aptrepo: kubernetes gpg key already present at %s", k8sKeyringPath)
 	}
 
 	srcLine := K8sSourceLine(mirror, k8sMinor, k8sKeyringPath)
+	log.Info("aptrepo: kubernetes source line: %s", strings.TrimSpace(srcLine))
 	if err := writeFileIfChanged(k8sSourcesPath, []byte(srcLine), 0o644); err != nil {
 		return err
 	}
 
+	log.Info("aptrepo: refreshing apt metadata after kubernetes repo setup")
 	if err := xexec.Run("apt-get", "update"); err != nil {
 		log.Warn("apt-get update (post-repo): %v", err)
 	}
@@ -232,6 +246,7 @@ func EnsureK8sRepo(_ context.Context, mirror, k8sMinor string) error {
 // cache; that update may legitimately fail on hosts whose existing sources
 // are broken (e.g. EOL distro) and is downgraded to a WARN.
 func installRepoDeps() error {
+	log.Info("aptrepo: ensuring repo helper packages: ca-certificates, curl, gnupg, lsb-release")
 	if err := xexec.Run("apt-get", "update"); err != nil {
 		log.Warn("apt-get update (pre-repo): %v", err)
 	}

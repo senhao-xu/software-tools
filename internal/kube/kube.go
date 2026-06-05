@@ -145,6 +145,9 @@ func tryOfflineInstall(opts Options) (bool, error) {
 		return false, nil
 	}
 	sort.Strings(debs)
+	log.Info("kube: requested Kubernetes version %s; offline install uses the exact .deb files in %s", opts.Version, debDir)
+	log.Info("kube: offline debs (%d): %s", len(debs), strings.Join(pathBasenames(debs), ", "))
+	log.Info("kube: if these package versions differ from --version, dpkg installs the .deb versions and the version check will warn")
 
 	args := append([]string{"-i"}, debs...)
 	if err := xexec.Run("dpkg", args...); err != nil {
@@ -168,7 +171,10 @@ func onlineInstall(ctx context.Context, opts Options) error {
 	// aptrepo handles official vs aliyun-cn URL selection internally; the
 	// Aliyun k8s mirror is distro-agnostic (one URL serves both Debian and
 	// Ubuntu), so kube does not need its own distro branch here.
-	if err := aptrepo.EnsureK8sRepo(ctx, opts.Mirror, minorVersion(opts.Version)); err != nil {
+	minor := minorVersion(opts.Version)
+	log.Info("kube: requested Kubernetes version %s; apt repo minor = %s", opts.Version, minor)
+	log.Info("kube: apt install is not patch-pinned; kubeadm/kubelet/kubectl resolve to the newest patch currently available in %s", minor)
+	if err := aptrepo.EnsureK8sRepo(ctx, opts.Mirror, minor); err != nil {
 		return err
 	}
 	// We deliberately don't pin the .deb version: the minor-scoped URL
@@ -201,6 +207,14 @@ func minorVersion(version string) string {
 		return parts[0] + "." + parts[1]
 	}
 	return version
+}
+
+func pathBasenames(paths []string) []string {
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		out = append(out, filepath.Base(p))
+	}
+	return out
 }
 
 // verifyInstalledVersion runs `kubeadm version -o short` and warns (but does

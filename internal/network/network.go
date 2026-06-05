@@ -74,7 +74,7 @@ const (
 // required (failure -> error); metrics-server failure is logged and ignored.
 // The returned error, when non-nil, comes from flannel only.
 func Install(_ context.Context, opts Options) error {
-	log.Info("network: install CNI + metrics-server ...")
+	log.Info("network: install CNI + metrics-server (assets-dir=%q, mirror=%q)", opts.AssetsDir, opts.Mirror)
 
 	if opts.Mirror == "cn" {
 		warnIfOnline(opts, flannelAssetFile, "flannel")
@@ -82,14 +82,14 @@ func Install(_ context.Context, opts Options) error {
 	}
 
 	flannelSrc := chooseSource(opts.AssetsDir, flannelAssetFile, flannelOnlineURL)
-	log.Info("network: applying flannel from %s", flannelSrc)
+	log.Info("network: applying flannel from %s (%s)", flannelSrc, sourceMode(opts.AssetsDir, flannelAssetFile))
 	if err := kubectlApply(flannelSrc); err != nil {
 		return fmt.Errorf("kubectl apply flannel (%s): %w", flannelSrc, err)
 	}
 	log.Info("network: flannel applied")
 
 	metricsSrc := chooseSource(opts.AssetsDir, metricsServerAssetFile, metricsServerOnlineURL)
-	log.Info("network: applying metrics-server from %s", metricsSrc)
+	log.Info("network: applying metrics-server from %s (%s)", metricsSrc, sourceMode(opts.AssetsDir, metricsServerAssetFile))
 	if err := kubectlApply(metricsSrc); err != nil {
 		// metrics-server is not load-bearing for cluster availability; degrade
 		// to WARN so a transient GitHub hiccup doesn't trash the whole install.
@@ -149,6 +149,18 @@ func chooseSource(assetsDir, assetFile, onlineURL string) string {
 		return onlineURL
 	}
 	return path
+}
+
+func sourceMode(assetsDir, assetFile string) string {
+	if assetsDir == "" {
+		return "online"
+	}
+	path := filepath.Join(assetsDir, assetFile)
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() {
+		return "online"
+	}
+	return "offline asset"
 }
 
 // warnIfOnline emits the mirror=cn advisory only when the given component

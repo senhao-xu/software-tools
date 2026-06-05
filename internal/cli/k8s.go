@@ -155,6 +155,7 @@ func NewK8sCmd() *cobra.Command {
 
 	cmd.AddCommand(NewK8sBundleCmd())
 	cmd.AddCommand(NewK8sJoinCmd())
+	cmd.AddCommand(NewK8sUninstallCmd())
 	return cmd
 }
 
