@@ -60,14 +60,7 @@
 项目发布 Linux `amd64` 和 `arm64` 压缩包。按目标架构直接下载 latest 版本：
 
 ```bash
-# ARCH 可选 amd64（x86_64）或 arm64（aarch64）。
-ARCH=amd64
-
-curl -L -o xsh.tar.gz \
-  "https://github.com/senhao-xu/software-tools/releases/latest/download/xsh_linux_${ARCH}.tar.gz"
-tar -xzf xsh.tar.gz
-sudo install -m 0755 xsh /usr/local/bin/xsh
-xsh version
+curl -L -o xsh.tar.gz "https://github.com/senhao-xu/software-tools/releases/latest/download/xsh_linux_$(dpkg --print-architecture).tar.gz" && tar -xzf xsh.tar.gz && sudo install -m 0755 xsh /usr/local/bin/xsh && xsh version
 ```
 
 如果需要固定到指定 Release，而不是跟随 `latest`，使用 tag `v202606051643`。
@@ -75,13 +68,7 @@ xsh version
 ```bash
 TAG=v202606051643
 VERSION=202606051643
-ARCH=amd64
-
-curl -L -o xsh.tar.gz \
-  "https://github.com/senhao-xu/software-tools/releases/download/${TAG}/xsh_${VERSION}_linux_${ARCH}.tar.gz"
-tar -xzf xsh.tar.gz
-sudo install -m 0755 xsh /usr/local/bin/xsh
-xsh version
+curl -L -o xsh.tar.gz "https://github.com/senhao-xu/software-tools/releases/download/${TAG}/xsh_${VERSION}_linux_$(dpkg --print-architecture).tar.gz" && tar -xzf xsh.tar.gz && sudo install -m 0755 xsh /usr/local/bin/xsh && xsh version
 ```
 
 Release 中同时发布 `checksums.txt`，生产环境安装前建议校验 sha256。
