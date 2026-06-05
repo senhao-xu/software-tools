@@ -1,5 +1,7 @@
 # xsh — Debian / Ubuntu Kubernetes & Docker Installer
 
+[中文](README.zh-CN.md)
+
 A single Go binary that turns a clean Debian 12/13 or Ubuntu 22.04/24.04 host
 into either a working Kubernetes node (master one-shot, or worker join) or a
 standalone Docker host.
