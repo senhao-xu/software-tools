@@ -117,3 +117,35 @@ Added GoReleaser-driven release workflow. cmd/xsh/main.go gets version/commit/da
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: Add Kubernetes uninstall command
+
+**Date**: 2026-06-05
+**Task**: Add Kubernetes uninstall command
+
+### Summary
+
+Added xsh k8s uninstall with explicit runtime removal choices, expanded install/uninstall logging, and updated README docs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `083b4b602a28675ce9eef6e5b02a41a440a4bc93` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
