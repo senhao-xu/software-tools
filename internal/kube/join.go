@@ -103,14 +103,20 @@ func validateJoinOptions(opts JoinOptions) error {
 func runKubeadmJoin(opts JoinOptions) error {
 	sock := criSocket(opts.Runtime)
 	log.Info("kubejoin: running kubeadm join with cri-socket=%s (token and CA hash are passed to kubeadm)", sock)
+	args := kubeadmJoinArgs(opts)
+	if err := xexec.Run("kubeadm", args...); err != nil {
+		return fmt.Errorf("kubeadm join: %w", err)
+	}
+	return nil
+}
+
+func kubeadmJoinArgs(opts JoinOptions) []string {
+	sock := criSocket(opts.Runtime)
 	args := []string{
 		"join", opts.Master,
 		"--token=" + opts.Token,
 		"--discovery-token-ca-cert-hash=" + opts.DiscoveryTokenCACertHash,
 		"--cri-socket=" + sock,
 	}
-	if err := xexec.Run("kubeadm", args...); err != nil {
-		return fmt.Errorf("kubeadm join: %w", err)
-	}
-	return nil
+	return args
 }

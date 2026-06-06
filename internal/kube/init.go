@@ -33,6 +33,7 @@ import (
 	"strconv"
 	"strings"
 
+	"xsh/internal/cri"
 	xexec "xsh/internal/exec"
 	"xsh/internal/log"
 )
@@ -70,8 +71,8 @@ type InitOptions struct {
 }
 
 const (
-	containerdSocket = "unix:///var/run/containerd/containerd.sock"
-	criDockerdSocket = "unix:///var/run/cri-dockerd.sock"
+	containerdSocket = cri.ContainerdSocket
+	criDockerdSocket = cri.DockerdSocket
 
 	cnImageRepository = "registry.aliyuncs.com/google_containers"
 
@@ -332,17 +333,28 @@ func pullOnlineImages(opts InitOptions) error {
 	if opts.Mirror == "cn" {
 		imageRepo = cnImageRepository
 	}
-	log.Info("kubeinit: pulling images online (version=%s, image-repository=%s)", opts.Version, imageRepo)
-	args := []string{"config", "images", "pull",
-		"--kubernetes-version=" + opts.Version,
-	}
-	if opts.Mirror == "cn" {
-		args = append(args, "--image-repository="+cnImageRepository)
-	}
+	sock := criSocket(opts.Runtime)
+	log.Info("kubeinit: pulling images online (version=%s, cri-socket=%s, image-repository=%s)",
+		opts.Version, sock, imageRepo)
+	args := kubeadmImagePullArgs(opts)
 	if err := xexec.Run("kubeadm", args...); err != nil {
 		return fmt.Errorf("kubeadm config images pull: %w", err)
 	}
 	return nil
+}
+
+func kubeadmImagePullArgs(opts InitOptions) []string {
+	args := []string{
+		"config",
+		"images",
+		"pull",
+		"--kubernetes-version=" + opts.Version,
+		"--cri-socket=" + criSocket(opts.Runtime),
+	}
+	if opts.Mirror == "cn" {
+		args = append(args, "--image-repository="+cnImageRepository)
+	}
+	return args
 }
 
 // --- step 4: kubeadm init --------------------------------------------------
@@ -357,6 +369,15 @@ func runKubeadmInit(opts InitOptions, advertise string) error {
 	}
 	log.Info("kubeinit: running kubeadm init (version=%s, cri-socket=%s, service-cidr=%s, pod-cidr=%s, advertise=%s, image-repository=%s)",
 		opts.Version, sock, opts.ServiceCIDR, opts.PodCIDR, advertise, imageRepo)
+	args := kubeadmInitArgs(opts, advertise)
+	if err := xexec.Run("kubeadm", args...); err != nil {
+		return fmt.Errorf("kubeadm init: %w", err)
+	}
+	return nil
+}
+
+func kubeadmInitArgs(opts InitOptions, advertise string) []string {
+	sock := criSocket(opts.Runtime)
 	args := []string{
 		"init",
 		"--kubernetes-version=" + opts.Version,
@@ -370,21 +391,13 @@ func runKubeadmInit(opts InitOptions, advertise string) error {
 	if advertise != "" {
 		args = append(args, "--apiserver-advertise-address="+advertise)
 	}
-	if err := xexec.Run("kubeadm", args...); err != nil {
-		return fmt.Errorf("kubeadm init: %w", err)
-	}
-	return nil
+	return args
 }
 
 // criSocket maps the runtime kind to its socket path; unknown values fall back
 // to containerd's socket so a stray flag value doesn't break the install.
 func criSocket(runtime string) string {
-	switch runtime {
-	case "docker":
-		return criDockerdSocket
-	default:
-		return containerdSocket
-	}
+	return cri.Socket(runtime)
 }
 
 // --- step 5: kubeconfig copy ----------------------------------------------

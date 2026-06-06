@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend package guidelines for kube installer changes."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Backend quality checklist before editing Go code."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Task modifies command construction and should reuse existing CRI socket helper."}

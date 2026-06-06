@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"xsh/internal/cri"
 	xexec "xsh/internal/exec"
 	"xsh/internal/log"
 )
@@ -131,9 +132,12 @@ func Confirm(state State, yes bool) (bool, error) {
 // install can proceed. Individual command failures are logged as WARN but do
 // not abort the sequence; only catastrophic errors propagate.
 func Cleanup(_ context.Context) error {
+	state := Detect(context.Background())
+
 	log.Info("cleanup: resetting kubeadm state")
-	warnIf(xexec.Run("kubeadm", "reset", "-f",
-		"--cri-socket=unix:///var/run/containerd/containerd.sock"))
+	for _, sock := range cleanupResetSockets(state) {
+		warnIf(xexec.Run("kubeadm", "reset", "-f", "--cri-socket="+sock))
+	}
 
 	log.Info("cleanup: stopping services")
 	for _, unit := range []string{"docker", "cri-docker", "containerd", "kubelet"} {
@@ -177,6 +181,17 @@ func Cleanup(_ context.Context) error {
 
 	log.Info("cleanup done")
 	return nil
+}
+
+func cleanupResetSockets(state State) []string {
+	var sockets []string
+	if state.DockerActive || state.HasDockerCmd {
+		sockets = append(sockets, cri.DockerdSocket)
+	}
+	if state.ContainerdActive || len(sockets) == 0 {
+		sockets = append(sockets, cri.ContainerdSocket)
+	}
+	return sockets
 }
 
 func isActive(unit string) bool {

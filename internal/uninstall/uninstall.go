@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 
+	"xsh/internal/cri"
 	"xsh/internal/detect"
 	xexec "xsh/internal/exec"
 	"xsh/internal/log"
@@ -28,8 +29,8 @@ const (
 )
 
 const (
-	containerdSocket = "unix:///var/run/containerd/containerd.sock"
-	criDockerdSocket = "unix:///var/run/cri-dockerd.sock"
+	containerdSocket = cri.ContainerdSocket
+	criDockerdSocket = cri.DockerdSocket
 )
 
 var (

@@ -199,6 +199,22 @@ func TestPrepareRunsOriginalPathWhenDependenciesPresent(t *testing.T) {
 	}
 }
 
+func TestDefaultImageListArgsIncludeVersionAndMirror(t *testing.T) {
+	runner := &recordingRunner{}
+	_, err := defaultImageList(Options{
+		Version: "v1.35.0",
+		Mirror:  "cn",
+	}, runner)
+	if err != nil {
+		t.Fatalf("defaultImageList() unexpected error: %v", err)
+	}
+
+	want := "kubeadm config images list --kubernetes-version=v1.35.0 --image-repository=" + cnImageRepository
+	if len(runner.outputs) != 1 || runner.outputs[0] != want {
+		t.Fatalf("RunOutput calls = %v, want [%q]", runner.outputs, want)
+	}
+}
+
 func TestCreateTarGz(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "bundle")
 	writeFile(t, dir, "deb/kubernetes/kubeadm_1.35.deb")
