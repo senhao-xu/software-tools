@@ -51,6 +51,7 @@ func NewDockerCmd() *cobra.Command {
 			}
 			installOpts := dockerinstall.Options{
 				Major:  opts.Major,
+				Yes:    opts.Yes,
 				Mirror: "",
 			}
 			if err := dockerinstall.Install(ctx, installOpts); err != nil {
@@ -64,8 +65,8 @@ func NewDockerCmd() *cobra.Command {
 	}
 
 	f := cmd.Flags()
-	f.IntVar(&opts.Major, "major", 0, "pin docker major version (0 = latest)")
-	f.BoolVarP(&opts.Yes, "yes", "y", false, "skip overwrite confirmation")
+	f.IntVar(&opts.Major, "major", 0, "pin docker major version (0 = interactive choice)")
+	f.BoolVarP(&opts.Yes, "yes", "y", false, "skip overwrite confirmation and version selection")
 
 	return cmd
 }

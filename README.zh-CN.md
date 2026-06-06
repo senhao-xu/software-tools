@@ -163,6 +163,12 @@ sudo xsh k8s join --runtime=docker \
 sudo xsh docker
 ```
 
+默认会列出当前 Docker apt 源中可用的 Docker CE 版本，回车选择最新版本，也可以输入编号安装指定版本。脚本或非交互环境可使用 `-y` 自动安装最新版本：
+
+```bash
+sudo xsh docker -y
+```
+
 固定 Docker CE 主版本：
 
 ```bash
@@ -339,8 +345,8 @@ sudo xsh k8s join --assets-dir ./xsh-k8s-offline \
 
 | 参数 | 默认值 | 说明 |
 | --- | --- | --- |
-| `--major` | `0` | 固定 Docker CE 主版本；`0` 表示安装当前源里的最新版本 |
-| `-y`, `--yes` | `false` | 跳过覆盖确认 |
+| `--major` | `0` | 固定 Docker CE 主版本；`0` 表示列出版本并交互选择 |
+| `-y`, `--yes` | `false` | 跳过覆盖确认和版本选择，自动安装最新版本 |
 
 ### `xsh version`
 

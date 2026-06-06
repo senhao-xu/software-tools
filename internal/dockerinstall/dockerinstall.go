@@ -5,7 +5,7 @@
 // The flow mirrors docker.senhao.eu.cc:
 //   - add the download.docker.com apt repo + gpg keyring (idempotent,
 //     delegated to internal/aptrepo)
-//   - optionally pin the docker-ce major version via apt-cache madison
+//   - list apt-cache madison docker-ce versions for interactive selection
 //   - render /etc/docker/daemon.json (json-file 100m x 5, systemd cgroup)
 //   - apt-get install docker-ce + plugins
 //   - systemctl enable --now docker
@@ -18,9 +18,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"xsh/internal/aptrepo"
@@ -31,13 +33,21 @@ import (
 // Options controls install behaviour.
 type Options struct {
 	// Major pins the docker-ce major version (e.g. 27 -> install 27.x.x).
-	// 0 means "latest" — no version pin is applied.
+	// 0 means interactive version selection unless Yes is set.
 	Major int
+
+	// Yes skips interactive version selection and lets apt install the latest
+	// available docker-ce package unless Major is set.
+	Yes bool
 
 	// Mirror is reserved for future use. download.docker.com is reachable from
 	// CN today, so PR9 ignores this field; it stays on the API so callers can
 	// be wired without churn.
 	Mirror string
+
+	// In/Out are used for interactive version selection. Nil means stdin/stderr.
+	In  io.Reader
+	Out io.Writer
 }
 
 const (
@@ -61,9 +71,15 @@ var dockerPkgs = []string{
 // step 7 (docker --version) is best-effort because the service is already
 // enabled by the time we get there.
 func Install(ctx context.Context, opts Options) error {
+	opts = normalizeOptions(opts)
+
 	log.Info("dockerinstall: install start (major=%d)", opts.Major)
 	if opts.Major == 0 {
-		log.Info("dockerinstall: no Docker major pin requested; apt will install the newest docker-ce available")
+		if opts.Yes {
+			log.Info("dockerinstall: no Docker major pin requested; apt will install the newest docker-ce available")
+		} else {
+			log.Info("dockerinstall: no Docker major pin requested; available versions will be listed for selection")
+		}
 	} else {
 		log.Info("dockerinstall: Docker major pin requested: %d.x", opts.Major)
 	}
@@ -75,7 +91,7 @@ func Install(ctx context.Context, opts Options) error {
 		return err
 	}
 
-	version, err := resolveVersion(opts.Major)
+	version, err := resolveVersion(opts)
 	if err != nil {
 		return err
 	}
@@ -141,24 +157,40 @@ func installAptDeps() error {
 
 // resolveVersion returns the apt version string (epoch-prefixed, e.g.
 // "5:27.5.1-1~debian.12~bookworm") to pass to apt-get install, or "" when
-// no pin is requested. The major prefix match runs against the version
-// component only; the epoch (`<n>:`) is preserved so apt accepts the string.
-func resolveVersion(major int) (string, error) {
-	if major == 0 {
+// apt should resolve the latest package. The major prefix match runs against
+// the version component only; the epoch (`<n>:`) is preserved so apt accepts
+// the string.
+func resolveVersion(opts Options) (string, error) {
+	if opts.Major == 0 && opts.Yes {
 		log.Info("dockerinstall: skipping apt-cache madison because no major pin was requested")
 		return "", nil
 	}
 
 	out, err := xexec.RunOutput("apt-cache", "madison", "docker-ce")
 	if err != nil {
-		return "", fmt.Errorf("apt-cache madison docker-ce: %w", err)
+		if opts.Major > 0 {
+			return "", fmt.Errorf("apt-cache madison docker-ce: %w", err)
+		}
+		log.Warn("apt-cache madison docker-ce failed; falling back to apt latest: %v", err)
+		return "", nil
 	}
 
-	version := parseMadisonVersion(out, major)
-	if version == "" {
-		return "", fmt.Errorf("no docker-ce version matching major=%d in apt cache", major)
+	versions := parseMadisonVersions(out, opts.Major)
+	if len(versions) == 0 {
+		if opts.Major > 0 {
+			return "", fmt.Errorf("no docker-ce version matching major=%d in apt cache", opts.Major)
+		}
+		log.Warn("apt-cache madison docker-ce returned no versions; falling back to apt latest")
+		return "", nil
 	}
-	log.Info("dockerinstall: selected docker-ce version %s for major=%d", version, major)
+
+	if opts.Major > 0 {
+		log.Info("dockerinstall: selected docker-ce version %s for major=%d", versions[0].Full, opts.Major)
+		return versions[0].Full, nil
+	}
+
+	version := askVersion(opts.In, opts.Out, versions)
+	log.Info("dockerinstall: selected docker-ce version %s", version)
 	return version, nil
 }
 
@@ -168,8 +200,26 @@ func resolveVersion(major int) (string, error) {
 // Returns "" when no row matches. Extracted as a pure function so unit tests
 // can exercise the parser without invoking apt-cache.
 func parseMadisonVersion(output string, major int) string {
-	prefix := regexp.MustCompile(fmt.Sprintf(`^%d\.`, major))
+	versions := parseMadisonVersions(output, major)
+	if len(versions) == 0 {
+		return ""
+	}
+	return versions[0].Full
+}
 
+type dockerVersion struct {
+	Full    string
+	Display string
+}
+
+func parseMadisonVersions(output string, major int) []dockerVersion {
+	var prefix *regexp.Regexp
+	if major > 0 {
+		prefix = regexp.MustCompile(fmt.Sprintf(`^%d\.`, major))
+	}
+
+	seen := map[string]bool{}
+	var versions []dockerVersion
 	scanner := bufio.NewScanner(strings.NewReader(output))
 	for scanner.Scan() {
 		parts := strings.Split(scanner.Text(), "|")
@@ -184,11 +234,49 @@ func parseMadisonVersion(output string, major int) string {
 		if idx := strings.Index(cmp, ":"); idx >= 0 {
 			cmp = cmp[idx+1:]
 		}
-		if prefix.MatchString(cmp) {
-			return full
+		if prefix != nil && !prefix.MatchString(cmp) {
+			continue
 		}
+		if seen[full] {
+			continue
+		}
+		seen[full] = true
+		versions = append(versions, dockerVersion{
+			Full:    full,
+			Display: cmp,
+		})
 	}
-	return ""
+	return versions
+}
+
+func askVersion(in io.Reader, out io.Writer, versions []dockerVersion) string {
+	fmt.Fprintln(out, "Available Docker CE versions:")
+	for i, version := range versions {
+		fmt.Fprintf(out, "  %d) %s\n", i+1, version.Display)
+	}
+
+	reader := bufio.NewReader(in)
+	for attempt := 0; attempt < 3; attempt++ {
+		fmt.Fprintf(out, "Select Docker version [1-%d, Enter=1/latest]: ", len(versions))
+		line, err := reader.ReadString('\n')
+		if err != nil && len(line) == 0 {
+			log.Warn("no Docker version answer; defaulting to latest available: %s", versions[0].Display)
+			return versions[0].Full
+		}
+
+		answer := strings.TrimSpace(line)
+		if answer == "" {
+			return versions[0].Full
+		}
+
+		n, err := strconv.Atoi(answer)
+		if err == nil && n >= 1 && n <= len(versions) {
+			return versions[n-1].Full
+		}
+		fmt.Fprintf(out, "  please enter a number between 1 and %d\n", len(versions))
+	}
+	log.Warn("no valid Docker version answer after 3 attempts, defaulting to latest available: %s", versions[0].Display)
+	return versions[0].Full
 }
 
 // --- step 4: daemon.json ---------------------------------------------------
@@ -279,4 +367,14 @@ func writeFileIfChanged(path string, content []byte, perm os.FileMode) error {
 	}
 	log.Info("dockerinstall: wrote %s", path)
 	return nil
+}
+
+func normalizeOptions(opts Options) Options {
+	if opts.In == nil {
+		opts.In = os.Stdin
+	}
+	if opts.Out == nil {
+		opts.Out = os.Stderr
+	}
+	return opts
 }

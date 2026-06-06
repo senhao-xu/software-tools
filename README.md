@@ -93,8 +93,9 @@ skipped — the master already deployed flannel cluster-wide.
 ### Standalone Docker
 
 ```bash
-sudo ./xsh docker              # latest docker-ce
-sudo ./xsh docker --major=27   # pin to 27.x
+sudo ./xsh docker              # list available docker-ce versions and choose
+sudo ./xsh docker -y           # non-interactive latest docker-ce
+sudo ./xsh docker --major=27   # pin to latest 27.x
 ```
 
 ### Uninstall Kubernetes
@@ -186,8 +187,8 @@ package or data removal.
 
 | Flag         | Default | Description                                  |
 |--------------|---------|----------------------------------------------|
-| `--major`    | `0`     | Pin docker-ce major (0 = latest)             |
-| `-y`,`--yes` | `false` | Skip the Step 0 overwrite prompt             |
+| `--major`    | `0`     | Pin docker-ce major (0 = interactive choice) |
+| `-y`,`--yes` | `false` | Skip overwrite prompt and version selection  |
 
 ## Offline Mode
 
