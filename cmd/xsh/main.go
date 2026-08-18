@@ -47,6 +47,7 @@ func main() {
 
 	root.AddCommand(cli.NewK8sCmd())
 	root.AddCommand(cli.NewDockerCmd())
+	root.AddCommand(cli.NewInstallCmd())
 	root.AddCommand(newVersionCmd())
 
 	root.SetContext(context.Background())

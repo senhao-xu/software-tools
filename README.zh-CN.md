@@ -13,6 +13,9 @@
 - 为 Kubernetes 安装流程准备离线资源包：`xsh k8s bundle`
 - 卸载 Kubernetes，并可选择是否同时卸载容器运行时：`xsh k8s uninstall`
 - 安装独立 Docker CE 环境：`xsh docker`
+- 通过别名安装常用 apt 软件包：`xsh install`（例如 `xsh install python`
+  会安装 `python3 python3-pip python-is-python3`；`xsh install nodejs`
+  会先配置 NodeSource 22.x 源；未知名称原样传给 `apt-get install`）
 - 支持 `containerd` 和 `docker + cri-dockerd` 两种 Kubernetes 容器运行时
 - 支持在线安装，也支持通过 `--assets-dir` 使用经过校验的 Kubernetes 离线资源
 - 支持 `--mirror=cn`，将 Kubernetes apt 源与镜像仓库切换到国内镜像；Docker 包仍使用 Docker 官方 apt 源
@@ -176,6 +179,18 @@ sudo xsh docker --major=27
 ```
 
 独立 Docker 安装会配置 Docker apt 源，安装 `docker-ce`、`docker-ce-cli`、`containerd.io`、Buildx、Compose 等包，并写入 `/etc/docker/daemon.json`。当前独立 Docker 命令不提供离线 bundle 子命令。
+
+### 安装常用软件包
+
+```bash
+sudo xsh install python    # 安装 python3 python3-pip python-is-python3
+sudo xsh install nodejs    # 先配置 NodeSource 22.x 源，再安装 nodejs
+sudo xsh install htop      # 未知名称原样交给 apt-get
+sudo xsh install python htop -y --no-update   # 合并成一个列表，不确认、不更新源
+```
+
+`docker` 和 `k8s` 是保留名称：`xsh install docker` 会直接报错，并提示改用
+`xsh docker` / `xsh k8s`。
 
 ### 卸载 Kubernetes
 
@@ -347,6 +362,21 @@ sudo xsh k8s join --assets-dir ./xsh-k8s-offline \
 | --- | --- | --- |
 | `--major` | `0` | 固定 Docker CE 主版本；`0` 表示列出版本并交互选择 |
 | `-y`, `--yes` | `false` | 跳过覆盖确认和版本选择，自动安装最新版本 |
+
+### `xsh install`
+
+通过别名安装 apt 软件包。
+
+先执行 `apt-get update`（可用 `--no-update` 跳过），然后把解析出的包列表
+合并成一次 `apt-get install -y` 调用。已知别名会展开成对应的 Debian 包组，
+未知名称原样透传。带预装钩子的名称（目前是 `nodejs`，通过 NodeSource 22.x
+脚本 `curl -fsSL https://deb.nodesource.com/setup_22.x | bash -`）会在安装
+前先执行钩子，使该包来自上游源而非发行版 apt 源。
+
+| 参数 | 默认值 | 说明 |
+| --- | --- | --- |
+| `--no-update` | `false` | 跳过 `apt-get update` |
+| `-y`, `--yes` | `false` | 跳过安装确认提示 |
 
 ### `xsh version`
 

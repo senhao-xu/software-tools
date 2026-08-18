@@ -19,6 +19,10 @@ the standard distribution tools (`apt-get`, `dpkg`, `systemctl`, ...).
   chain
 - Kubernetes uninstall subcommand with explicit runtime removal choices
 - Standalone Docker installer (mirrors the docker.senhao.eu.cc recipe)
+- `install` subcommand for apt packages with friendly aliases
+  (e.g. `xsh install python` -> `python3 python3-pip python-is-python3`;
+  `xsh install nodejs` sets up the NodeSource 22.x repo first; unknown names
+  pass through verbatim)
 - Dual install mode: online installs, or validated Kubernetes offline bundles
   via `--assets-dir`
 - `--mirror=cn` switches the Kubernetes apt repo and image repository to
@@ -97,6 +101,18 @@ sudo ./xsh docker              # list available docker-ce versions and choose
 sudo ./xsh docker -y           # non-interactive latest docker-ce
 sudo ./xsh docker --major=27   # pin to latest 27.x
 ```
+
+### Install apt packages
+
+```bash
+sudo ./xsh install python      # installs python3 python3-pip python-is-python3
+sudo ./xsh install nodejs      # sets up the NodeSource 22.x repo, then installs nodejs
+sudo ./xsh install htop        # passes unknown names straight to apt-get
+sudo ./xsh install python htop -y --no-update   # merged list, no prompt, no update
+```
+
+`docker` and `k8s` are reserved: `xsh install docker` errors with a hint to
+use `xsh docker` / `xsh k8s` instead.
 
 ### Uninstall Kubernetes
 
@@ -189,6 +205,21 @@ package or data removal.
 |--------------|---------|----------------------------------------------|
 | `--major`    | `0`     | Pin docker-ce major (0 = interactive choice) |
 | `-y`,`--yes` | `false` | Skip overwrite prompt and version selection  |
+
+### `xsh install` - apt packages with aliases
+
+Runs `apt-get update` (skippable), then installs the merged package list in a
+single `apt-get install -y` invocation. Known aliases expand to their
+Debian-family package set; unknown names pass through verbatim. Names with a
+pre-install hook (currently `nodejs`, via the NodeSource 22.x setup script
+`curl -fsSL https://deb.nodesource.com/setup_22.x | bash -`) run that hook
+before the install step so the package comes from the upstream repo instead
+of distro apt.
+
+| Flag           | Default | Description                                       |
+|----------------|---------|---------------------------------------------------|
+| `--no-update`  | `false` | Skip the `apt-get update` step                    |
+| `-y`, `--yes`  | `false` | Skip the install confirmation prompt              |
 
 ## Offline Mode
 
