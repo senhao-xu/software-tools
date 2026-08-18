@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 4
-- **Last Active**: 2026-06-05
+- **Total Sessions**: 5
+- **Last Active**: 2026-08-18
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~151 | Active |
+| `journal-1.md` | ~184 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 5 | 2026-08-18 | Add xsh install subcommand (python/nodejs aliases) | `bd09812` | `master` |
 | 4 | 2026-06-05 | Add Kubernetes uninstall command | `083b4b602a28675ce9eef6e5b02a41a440a4bc93` | `-` |
 | 3 | 2026-05-24 | PR14: GitHub Actions release pipeline (linux amd64+arm64 via GoReleaser) | `a74194e` | `master` |
 | 2 | 2026-05-23 | xsh multi-OS support (Debian + Ubuntu) | `b8bd432`, `1d917db`, `7c10fa4` | `master` |

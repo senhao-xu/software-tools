@@ -149,3 +149,36 @@ Added xsh k8s uninstall with explicit runtime removal choices, expanded install/
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: Add xsh install subcommand (python/nodejs aliases)
+
+**Date**: 2026-08-18
+**Task**: Add xsh install subcommand (python/nodejs aliases)
+**Branch**: `master`
+
+### Summary
+
+Implemented xsh install <name>... subcommand: alias table (python -> python3 python3-pip python-is-python3), passthrough for unknown apt package names, NodeSource pre-install hook for nodejs (setup_22.x), reserved names docker/k8s rejected with hints, flags --no-update and -y/--yes. Unit tests (20 cases) plus bilingual README updates; verified via golang:1.25 container (build/vet/test/gofmt all clean).
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bd09812` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
