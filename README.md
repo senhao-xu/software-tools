@@ -21,7 +21,8 @@ the standard distribution tools (`apt-get`, `dpkg`, `systemctl`, ...).
 - Standalone Docker installer (mirrors the docker.senhao.eu.cc recipe)
 - `install` subcommand for apt packages with friendly aliases
   (e.g. `xsh install python` -> `python3 python3-pip python-is-python3`;
-  `xsh install nodejs` sets up the NodeSource 22.x repo first; unknown names
+  `xsh install nodejs` sets up the NodeSource 22.x repo first; `xsh install
+  java` sets up the Adoptium repo and installs Temurin 21; unknown names
   pass through verbatim)
 - Dual install mode: online installs, or validated Kubernetes offline bundles
   via `--assets-dir`
@@ -107,6 +108,7 @@ sudo ./xsh docker --major=27   # pin to latest 27.x
 ```bash
 sudo ./xsh install python      # installs python3 python3-pip python-is-python3
 sudo ./xsh install nodejs      # sets up the NodeSource 22.x repo, then installs nodejs
+sudo ./xsh install java maven  # sets up the Adoptium repo (Temurin 21 JDK), then installs temurin-21-jdk + maven
 sudo ./xsh install htop        # passes unknown names straight to apt-get
 sudo ./xsh install python htop -y --no-update   # merged list, no prompt, no update
 ```
@@ -212,9 +214,12 @@ Runs `apt-get update` (skippable), then installs the merged package list in a
 single `apt-get install -y` invocation. Known aliases expand to their
 Debian-family package set; unknown names pass through verbatim. Names with a
 pre-install hook (currently `nodejs`, via the NodeSource 22.x setup script
-`curl -fsSL https://deb.nodesource.com/setup_22.x | bash -`) run that hook
+`curl -fsSL https://deb.nodesource.com/setup_22.x | bash -`, and `java`, via
+the Adoptium keyring + sources.list.d setup for Temurin 21) run that hook
 before the install step so the package comes from the upstream repo instead
-of distro apt.
+of distro apt. When any hook ran, the apt index is refreshed once more before
+installing, so the newly added sources are visible; `--no-update` only skips
+the initial update.
 
 | Flag           | Default | Description                                       |
 |----------------|---------|---------------------------------------------------|

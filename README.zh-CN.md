@@ -15,7 +15,8 @@
 - 安装独立 Docker CE 环境：`xsh docker`
 - 通过别名安装常用 apt 软件包：`xsh install`（例如 `xsh install python`
   会安装 `python3 python3-pip python-is-python3`；`xsh install nodejs`
-  会先配置 NodeSource 22.x 源；未知名称原样传给 `apt-get install`）
+  会先配置 NodeSource 22.x 源；`xsh install java` 会先配置 Adoptium 源并
+  安装 Temurin 21；未知名称原样传给 `apt-get install`）
 - 支持 `containerd` 和 `docker + cri-dockerd` 两种 Kubernetes 容器运行时
 - 支持在线安装，也支持通过 `--assets-dir` 使用经过校验的 Kubernetes 离线资源
 - 支持 `--mirror=cn`，将 Kubernetes apt 源与镜像仓库切换到国内镜像；Docker 包仍使用 Docker 官方 apt 源
@@ -185,6 +186,7 @@ sudo xsh docker --major=27
 ```bash
 sudo xsh install python    # 安装 python3 python3-pip python-is-python3
 sudo xsh install nodejs    # 先配置 NodeSource 22.x 源，再安装 nodejs
+sudo xsh install java maven  # 先配置 Adoptium 源（Temurin 21 JDK），再安装 temurin-21-jdk + maven
 sudo xsh install htop      # 未知名称原样交给 apt-get
 sudo xsh install python htop -y --no-update   # 合并成一个列表，不确认、不更新源
 ```
@@ -370,8 +372,11 @@ sudo xsh k8s join --assets-dir ./xsh-k8s-offline \
 先执行 `apt-get update`（可用 `--no-update` 跳过），然后把解析出的包列表
 合并成一次 `apt-get install -y` 调用。已知别名会展开成对应的 Debian 包组，
 未知名称原样透传。带预装钩子的名称（目前是 `nodejs`，通过 NodeSource 22.x
-脚本 `curl -fsSL https://deb.nodesource.com/setup_22.x | bash -`）会在安装
-前先执行钩子，使该包来自上游源而非发行版 apt 源。
+脚本 `curl -fsSL https://deb.nodesource.com/setup_22.x | bash -`，以及
+`java`，通过 Adoptium 的 keyring + sources.list.d 配置安装 Temurin 21）
+会在安装前先执行钩子，使该包来自上游源而非发行版 apt 源。只要执行过钩子，
+安装前会再刷新一次 apt 索引，让新增的源生效；`--no-update` 只跳过最开始的
+那次更新。
 
 | 参数 | 默认值 | 说明 |
 | --- | --- | --- |

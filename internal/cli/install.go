@@ -16,7 +16,9 @@ import (
 // expand to. New aliases are one-line additions here.
 var installAliases = map[string][]string{
 	"python": {"python3", "python3-pip", "python-is-python3"},
-	"nodejs": {"nodejs"}, // NodeSource repo, not distro apt; see installPreHooks.
+	"nodejs": {"nodejs"},         // NodeSource repo, not distro apt; see installPreHooks.
+	"java":   {"temurin-21-jdk"}, // Adoptium repo, not distro apt; see installPreHooks.
+	"maven":  {"maven"},
 }
 
 // installPreHooks maps user-facing names to a shell snippet that must run
@@ -25,6 +27,11 @@ var installAliases = map[string][]string{
 // here. Snippets run via `bash -c`, following the aptrepo curl|gpg pattern.
 var installPreHooks = map[string]string{
 	"nodejs": "curl -fsSL https://deb.nodesource.com/setup_22.x | bash -",
+	// Eclipse Temurin JDK via the Adoptium repo: keyring + sources.list.d entry
+	// keyed on the distro codename, same shape as the docker repo setup.
+	// gpg --yes keeps the hook idempotent: without it a re-run would prompt to
+	// overwrite the existing keyring and fail on a non-interactive tty.
+	"java": "mkdir -p /etc/apt/keyrings && curl -fsSL https://packages.adoptium.net/artifactory/api/gpg/key/public | gpg --dearmor --yes -o /etc/apt/keyrings/adoptium.gpg && echo \"deb [signed-by=/etc/apt/keyrings/adoptium.gpg] https://packages.adoptium.net/artifactory/deb $(. /etc/os-release && echo $VERSION_CODENAME) main\" > /etc/apt/sources.list.d/adoptium.list",
 }
 
 // installReserved lists names owned by dedicated subcommands; `xsh install`
@@ -72,9 +79,19 @@ func NewInstallCmd() *cobra.Command {
 				}
 			}
 
-			for _, hook := range collectInstallPreHooks(args) {
+			hooks := collectInstallPreHooks(args)
+			for _, hook := range hooks {
 				if err := exec.Run("bash", "-c", hook); err != nil {
 					return fmt.Errorf("pre-install hook failed: %w", err)
+				}
+			}
+
+			// Hooks may add apt sources; refresh the index so the install step
+			// can see them. Independent of --no-update, which only skips the
+			// initial update above.
+			if needsPostHookUpdate(hooks) {
+				if err := exec.Run("apt-get", "update"); err != nil {
+					return fmt.Errorf("apt-get update (post-hook): %w", err)
 				}
 			}
 
@@ -134,6 +151,14 @@ func collectInstallPreHooks(args []string) []string {
 		hooks = append(hooks, hook)
 	}
 	return hooks
+}
+
+// needsPostHookUpdate reports whether an `apt-get update` must run after the
+// pre-install hooks: any hook may have added apt sources (e.g. Adoptium), and
+// without a refresh `apt-get install` would not see the new packages. This is
+// independent of the --no-update flag, which only governs the initial update.
+func needsPostHookUpdate(hooks []string) bool {
+	return len(hooks) > 0
 }
 
 // confirmInstall lists the resolved packages once and prompts [Y/n]. EOF or

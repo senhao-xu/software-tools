@@ -23,6 +23,21 @@ func TestResolveInstallPackages(t *testing.T) {
 			want: []string{"nodejs"},
 		},
 		{
+			name: "java alias maps to temurin-21-jdk",
+			args: []string{"java"},
+			want: []string{"temurin-21-jdk"},
+		},
+		{
+			name: "maven alias maps to maven package",
+			args: []string{"maven"},
+			want: []string{"maven"},
+		},
+		{
+			name: "java and maven merge into one list",
+			args: []string{"java", "maven"},
+			want: []string{"temurin-21-jdk", "maven"},
+		},
+		{
 			name: "nodejs with passthrough merges into one list",
 			args: []string{"nodejs", "htop"},
 			want: []string{"nodejs", "htop"},
@@ -109,6 +124,26 @@ func TestCollectInstallPreHooks(t *testing.T) {
 			args: []string{"htop", "nodejs"},
 			want: []string{"curl -fsSL https://deb.nodesource.com/setup_22.x | bash -"},
 		},
+		{
+			name: "java has the Adoptium repo setup hook",
+			args: []string{"java"},
+			want: []string{installPreHooks["java"]},
+		},
+		{
+			name: "java and nodejs hooks both collected in order",
+			args: []string{"java", "nodejs"},
+			want: []string{installPreHooks["java"], installPreHooks["nodejs"]},
+		},
+		{
+			name: "java hook runs once even with duplicate args",
+			args: []string{"java", "maven", "java"},
+			want: []string{installPreHooks["java"]},
+		},
+		{
+			name: "hookless names including maven return no hooks",
+			args: []string{"python", "maven", "htop"},
+			want: nil,
+		},
 	}
 
 	for _, tt := range tests {
@@ -123,6 +158,21 @@ func TestCollectInstallPreHooks(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestNeedsPostHookUpdate(t *testing.T) {
+	if !needsPostHookUpdate([]string{"some hook"}) {
+		t.Fatal("needsPostHookUpdate with one hook = false, want true")
+	}
+	if !needsPostHookUpdate(collectInstallPreHooks([]string{"java"})) {
+		t.Fatal("needsPostHookUpdate for java = false, want true (Adoptium sources must be indexed)")
+	}
+	if needsPostHookUpdate(collectInstallPreHooks([]string{"python", "maven", "htop"})) {
+		t.Fatal("needsPostHookUpdate with no hooks = true, want false")
+	}
+	if needsPostHookUpdate(nil) {
+		t.Fatal("needsPostHookUpdate(nil) = true, want false")
 	}
 }
 
