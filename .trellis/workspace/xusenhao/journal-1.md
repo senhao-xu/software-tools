@@ -182,3 +182,37 @@ Implemented xsh install <name>... subcommand: alias table (python -> python3 pyt
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: Add java/maven install aliases and condense READMEs
+
+**Date**: 2026-08-18
+**Task**: Add java/maven install aliases and condense READMEs
+**Branch**: `master`
+
+### Summary
+
+Added 'java' (Adoptium repo + Temurin 21 JDK) and 'maven' aliases to xsh install; generic post-hook apt-get update fix (needsPostHookUpdate); gpg --dearmor --yes idempotency fix found in check phase; captured apt hook conventions in backend quality spec. Condensed both READMEs from ~900 to ~350 lines keeping quick start, command reference, offline mode, and troubleshooting essentials. Also set git identity to xusenhao.
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `39b3cb5` | (see git log) |
+| `8c9c2bb` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
