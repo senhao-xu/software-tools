@@ -52,9 +52,22 @@ func NewInstallCmd() *cobra.Command {
 	opts := &InstallOptions{}
 
 	cmd := &cobra.Command{
-		Use:   "install",
+		Use:   "install [name...]",
 		Short: "Install apt packages, expanding aliases like 'python' to their Debian package set",
-		Args:  cobra.MinimumNArgs(1),
+		Long: `Install apt packages, expanding friendly aliases to their Debian package set.
+
+Aliases:
+  python -> python3, python3-pip, python-is-python3
+  nodejs -> nodejs (via the NodeSource repo)
+  java   -> temurin-21-jdk (via the Adoptium repo)
+  maven  -> maven
+
+Unknown names pass through verbatim to apt-get install. Reserved names are
+handled by their own subcommands: "docker" by "xsh docker" and "k8s" by
+"xsh k8s"; run those instead.`,
+		Example: `  xsh install python nodejs
+  xsh install -y java maven`,
+		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			pkgs, err := resolveInstallPackages(args)
 			if err != nil {
@@ -73,6 +86,8 @@ func NewInstallCmd() *cobra.Command {
 				}
 			}
 
+			// Flow: initial apt-get update -> ensure hook deps (if hooks) ->
+			// run hooks -> post-hook update (if hooks) -> install.
 			if !opts.NoUpdate {
 				if err := exec.Run("apt-get", "update"); err != nil {
 					return fmt.Errorf("apt-get update: %w", err)
@@ -80,6 +95,18 @@ func NewInstallCmd() *cobra.Command {
 			}
 
 			hooks := collectInstallPreHooks(args)
+
+			// Hooks shell out to curl/gpg, which a fresh minimal Debian/Ubuntu
+			// host may not have; install them first (mirrors aptrepo's
+			// installRepoDeps). Skipped for hookless installs so `xsh install
+			// python` pays no extra cost. lsb-release is not needed: the java
+			// hook reads the codename from /etc/os-release.
+			if len(hooks) > 0 {
+				if err := ensureInstallHooksDeps(); err != nil {
+					return err
+				}
+			}
+
 			for _, hook := range hooks {
 				if err := exec.Run("bash", "-c", hook); err != nil {
 					return fmt.Errorf("pre-install hook failed: %w", err)
@@ -159,6 +186,25 @@ func collectInstallPreHooks(args []string) []string {
 // independent of the --no-update flag, which only governs the initial update.
 func needsPostHookUpdate(hooks []string) bool {
 	return len(hooks) > 0
+}
+
+// ensureInstallHooksDeps installs the helper packages the pre-install hooks
+// shell out to (curl + gpg, plus ca-certificates for TLS). Mirrors aptrepo's
+// installRepoDeps: runs `apt-get update` first so the install can resolve
+// from a stale cache; that update may legitimately fail on hosts whose
+// existing sources are broken (e.g. EOL distro) and is downgraded to a WARN.
+// lsb-release is not needed here: the java hook reads the codename from
+// /etc/os-release, not lsb_release.
+func ensureInstallHooksDeps() error {
+	log.Info("install: ensuring hook helper packages: ca-certificates, curl, gnupg")
+	if err := exec.Run("apt-get", "update"); err != nil {
+		log.Warn("apt-get update (pre-hooks): %v", err)
+	}
+	if err := exec.Run("apt-get", "install", "-y",
+		"ca-certificates", "curl", "gnupg"); err != nil {
+		return fmt.Errorf("apt-get install deps: %w", err)
+	}
+	return nil
 }
 
 // confirmInstall lists the resolved packages once and prompts [Y/n]. EOF or
